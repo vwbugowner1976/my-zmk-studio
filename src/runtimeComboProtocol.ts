@@ -20,8 +20,14 @@ export type RuntimeComboGlobalSettings = {
   requirePriorIdleMs: number;
 };
 
+export type RuntimeComboStatus = {
+  affectedCount: number;
+  message: string;
+};
+
 export const encodeListCombosRequest = () => new Uint8Array([0x0a, 0x00]);
 export const encodeGetGlobalSettingsRequest = () => new Uint8Array([0x32, 0x00]);
+export const encodeSaveRequest = () => new Uint8Array([0x4a, 0x00]);
 
 function encodeVarint(value: number): number[] {
   const bytes: number[] = [];
@@ -35,9 +41,54 @@ function encodeVarint(value: number): number[] {
   return bytes;
 }
 
+function fieldVarint(field: number, value: number, includeZero = false): number[] {
+  if (!includeZero && value === 0) return [];
+  return [...encodeVarint(field << 3), ...encodeVarint(value)];
+}
+
+function fieldBytes(field: number, bytes: number[] | Uint8Array): number[] {
+  const value = Array.from(bytes);
+  return [...encodeVarint((field << 3) | 2), ...encodeVarint(value.length), ...value];
+}
+
+function fieldString(field: number, value: string): number[] {
+  if (!value) return [];
+  return fieldBytes(field, new TextEncoder().encode(value));
+}
+
 export function encodeGetComboRequest(index: number): Uint8Array {
-  const inner = index === 0 ? [] : [0x08, ...encodeVarint(index)];
-  return new Uint8Array([0x12, inner.length, ...inner]);
+  const inner = fieldVarint(1, index);
+  return new Uint8Array(fieldBytes(2, inner));
+}
+
+export function encodeSetComboRequest(combo: RuntimeComboRecord, persist = false): Uint8Array {
+  const packedPositions = combo.keyPositions.flatMap((value) => encodeVarint(value));
+  const behavior = [
+    ...fieldVarint(1, combo.behaviorId),
+    ...fieldVarint(2, combo.param1),
+    ...fieldVarint(3, combo.param2),
+  ];
+  const inner = [
+    ...fieldVarint(1, combo.index),
+    ...fieldBytes(2, packedPositions),
+    ...fieldBytes(3, behavior),
+    ...fieldVarint(5, combo.layerMask),
+    ...fieldVarint(7, combo.enabled ? 1 : 0, true),
+    ...fieldVarint(8, persist ? 1 : 0),
+    ...fieldVarint(9, combo.timeoutMs),
+    ...fieldVarint(10, combo.requirePriorIdleMs),
+    ...fieldVarint(11, combo.slowReleaseOverride),
+  ];
+  return new Uint8Array(fieldBytes(3, inner));
+}
+
+export function encodeSetComboNameRequest(index: number, name: string, persist = false): Uint8Array {
+  const inner = [
+    ...fieldVarint(1, index),
+    ...fieldString(2, name),
+    ...fieldVarint(3, persist ? 1 : 0),
+  ];
+  return new Uint8Array(fieldBytes(4, inner));
 }
 
 class Reader {
@@ -244,4 +295,29 @@ export function decodeGlobalSettingsResponse(bytes: Uint8Array): RuntimeComboGlo
     reader.skip(wire);
   }
   throw new Error('Runtime Combo global settings were not returned');
+}
+
+export function decodeStatusResponse(bytes: Uint8Array): RuntimeComboStatus {
+  const reader = new Reader(bytes);
+  while (!reader.done) {
+    const tag = reader.uint32();
+    const field = tag >>> 3;
+    const wire = tag & 7;
+    if (field === 1 && wire === 2) throw new Error(decodeError(reader.bytesValue()));
+    if (field === 4 && wire === 2) {
+      const statusReader = new Reader(reader.bytesValue());
+      const status: RuntimeComboStatus = { affectedCount: 0, message: '' };
+      while (!statusReader.done) {
+        const statusTag = statusReader.uint32();
+        const statusField = statusTag >>> 3;
+        const statusWire = statusTag & 7;
+        if (statusField === 1) status.affectedCount = statusReader.uint32();
+        else if (statusField === 2 && statusWire === 2) status.message = statusReader.string();
+        else statusReader.skip(statusWire);
+      }
+      return status;
+    }
+    reader.skip(wire);
+  }
+  throw new Error('Runtime Combo status was not returned');
 }
