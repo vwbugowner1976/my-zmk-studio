@@ -1,100 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useContext } from 'react';
 import {
-  DemoRuntimeComboClient,
-  type RuntimeCombo,
-} from './runtimeComboClient';
+  ZMKAppContext,
+  ZMKConnection,
+  connectSerial,
+  isWebSerialSupported,
+} from '@cormoran/zmk-studio-react-hook';
 
-const client = new DemoRuntimeComboClient();
+const RUNTIME_COMBO_SUBSYSTEM_ID = 'cormoran__runtime_combo';
 
-export default function App() {
-  const [connected, setConnected] = useState(false);
-  const [combos, setCombos] = useState<RuntimeCombo[]>([]);
-  const [selectedId, setSelectedId] = useState(0);
-  const [dirty, setDirty] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('Demo transport ready');
-
-  const selected = useMemo(
-    () => combos.find((combo) => combo.id === selectedId) ?? combos[0],
-    [combos, selectedId],
-  );
-
-  async function toggleConnection() {
-    setBusy(true);
-    try {
-      if (connected) {
-        await client.disconnect();
-        setConnected(false);
-        setCombos([]);
-        setMessage('Disconnected');
-      } else {
-        await client.connect();
-        const loaded = await client.listCombos();
-        setCombos(loaded);
-        setSelectedId(loaded[0]?.id ?? 0);
-        setConnected(true);
-        setMessage(`Loaded ${loaded.length} combos`);
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function updateSelected(patch: Partial<RuntimeCombo>) {
-    setCombos((current) =>
-      current.map((combo) => (combo.id === selectedId ? { ...combo, ...patch } : combo)),
-    );
-    setDirty(true);
-  }
-
-  function addCombo() {
-    const nextId = combos.length ? Math.max(...combos.map((combo) => combo.id)) + 1 : 0;
-    const next: RuntimeCombo = {
-      id: nextId,
-      name: `Combo ${nextId}`,
-      positions: [],
-      behavior: '&kp ESC',
-      timeoutMs: 40,
-      enabled: true,
-    };
-    setCombos((current) => [...current, next]);
-    setSelectedId(nextId);
-    setDirty(true);
-  }
-
-  async function removeCombo() {
-    if (!selected) return;
-    setBusy(true);
-    try {
-      await client.deleteCombo(selected.id);
-      await client.save();
-      const reloaded = await client.listCombos();
-      setCombos(reloaded);
-      setSelectedId(reloaded[0]?.id ?? 0);
-      setDirty(false);
-      setMessage('Deleted and reloaded from device');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function save() {
-    if (!selected) return;
-    setBusy(true);
-    try {
-      await client.setCombo(selected);
-      await client.save();
-      // Important design rule: never trust local UI state after a save.
-      // Re-read from firmware so the list reflects what was actually persisted.
-      const reloaded = await client.listCombos();
-      setCombos(reloaded);
-      setSelectedId(selected.id);
-      setDirty(false);
-      setMessage('Saved and reloaded from device');
-    } finally {
-      setBusy(false);
-    }
-  }
+function ConnectedWorkspace({ disconnect, deviceName }: { disconnect: () => void; deviceName?: string }) {
+  const zmkApp = useContext(ZMKAppContext);
+  const runtimeCombo = zmkApp?.findSubsystem(RUNTIME_COMBO_SUBSYSTEM_ID);
 
   return (
     <div className="app-shell">
@@ -103,23 +19,17 @@ export default function App() {
           <div className="eyebrow">ZMK configuration UI</div>
           <h1>My ZMK Studio</h1>
         </div>
-        <button
-          className={connected ? 'button secondary' : 'button'}
-          onClick={toggleConnection}
-          disabled={busy}
-        >
-          {connected ? 'Disconnect' : 'Connect'}
-        </button>
+        <button className="button secondary" onClick={disconnect}>Disconnect</button>
       </header>
 
       <main className="workspace">
         <aside className="sidebar">
           <div className="section-title">Device</div>
           <div className="device-card">
-            <span className={connected ? 'status online' : 'status'} />
+            <span className="status online" />
             <div>
-              <strong>{connected ? 'Connected' : 'Not connected'}</strong>
-              <small>{message}</small>
+              <strong>{deviceName || 'ZMK device'}</strong>
+              <small>Connected over USB / Web Serial</small>
             </div>
           </div>
 
@@ -136,103 +46,104 @@ export default function App() {
             <div>
               <div className="eyebrow">Runtime configuration</div>
               <h2>Combos</h2>
-              <p>Edit combos without rebuilding firmware.</p>
+              <p>USB connection is live. Runtime Combo RPC support is the next step.</p>
             </div>
-            <button className="button" onClick={addCombo} disabled={!connected || busy}>
-              + Add Combo
-            </button>
           </div>
 
-          <div className="combo-layout">
-            <div className="combo-list panel">
-              {combos.length === 0 ? (
-                <div className="empty">Connect a device to load combos.</div>
-              ) : (
-                combos.map((combo) => (
-                  <button
-                    key={combo.id}
-                    className={combo.id === selectedId ? 'combo-row selected' : 'combo-row'}
-                    onClick={() => setSelectedId(combo.id)}
-                  >
-                    <span>
-                      <strong>{combo.name}</strong>
-                      <small>#{combo.id} · {combo.positions.join(' + ') || 'No positions'}</small>
-                    </span>
-                    <span className={combo.enabled ? 'pill' : 'pill muted'}>
-                      {combo.enabled ? 'On' : 'Off'}
-                    </span>
-                  </button>
-                ))
-              )}
-            </div>
-
-            {selected ? (
-              <div className="editor panel">
-                <label>
-                  Name
-                  <input
-                    value={selected.name}
-                    onChange={(event) => updateSelected({ name: event.target.value })}
-                  />
-                </label>
-
-                <label>
-                  Key positions
-                  <input
-                    value={selected.positions.join(', ')}
-                    onChange={(event) =>
-                      updateSelected({
-                        positions: event.target.value
-                          .split(',')
-                          .map((value) => Number(value.trim()))
-                          .filter((value) => Number.isFinite(value)),
-                      })
-                    }
-                    placeholder="12, 13"
-                  />
-                </label>
-
-                <label>
-                  Behavior
-                  <input
-                    value={selected.behavior}
-                    onChange={(event) => updateSelected({ behavior: event.target.value })}
-                    placeholder="&kp ESC"
-                  />
-                </label>
-
-                <label>
-                  Timeout (ms)
-                  <input
-                    type="number"
-                    min={1}
-                    value={selected.timeoutMs}
-                    onChange={(event) => updateSelected({ timeoutMs: Number(event.target.value) })}
-                  />
-                </label>
-
-                <label className="toggle-row">
-                  <input
-                    type="checkbox"
-                    checked={selected.enabled}
-                    onChange={(event) => updateSelected({ enabled: event.target.checked })}
-                  />
-                  Enabled
-                </label>
-
-                <div className="actions">
-                  <button className="button danger" onClick={removeCombo} disabled={busy}>Delete</button>
-                  <button className="button" disabled={!dirty || busy} onClick={save}>
-                    {busy ? 'Working…' : dirty ? 'Save changes' : 'Saved'}
-                  </button>
-                </div>
-              </div>
+          <div className="panel" style={{ padding: 24 }}>
+            <div className="section-title">Custom Subsystem</div>
+            {runtimeCombo ? (
+              <>
+                <h3>Runtime Combo detected</h3>
+                <p>
+                  <code>{RUNTIME_COMBO_SUBSYSTEM_ID}</code> was found at subsystem index{' '}
+                  <strong>{runtimeCombo.index}</strong>.
+                </p>
+                <p>
+                  The next implementation will call this subsystem directly to list, edit, and save combos.
+                </p>
+              </>
             ) : (
-              <div className="panel empty">No combo selected.</div>
+              <>
+                <h3>Runtime Combo not detected</h3>
+                <p>
+                  The keyboard connected successfully, but <code>{RUNTIME_COMBO_SUBSYSTEM_ID}</code> was not advertised.
+                </p>
+                <p>Confirm the Runtime Combo Studio RPC option is enabled in the firmware.</p>
+              </>
             )}
           </div>
         </section>
       </main>
     </div>
+  );
+}
+
+function DisconnectedWorkspace({ connect, isLoading }: { connect: (factory: typeof connectSerial) => Promise<void>; isLoading: boolean }) {
+  const serialSupported = isWebSerialSupported();
+
+  return (
+    <div className="app-shell">
+      <header className="topbar">
+        <div>
+          <div className="eyebrow">ZMK configuration UI</div>
+          <h1>My ZMK Studio</h1>
+        </div>
+        <button
+          className="button"
+          onClick={() => connect(connectSerial)}
+          disabled={!serialSupported || isLoading}
+        >
+          {isLoading ? 'Connecting…' : 'Connect USB'}
+        </button>
+      </header>
+
+      <main className="workspace">
+        <aside className="sidebar">
+          <div className="section-title">Device</div>
+          <div className="device-card">
+            <span className="status" />
+            <div>
+              <strong>Not connected</strong>
+              <small>{serialSupported ? 'Chrome / Edge Web Serial ready' : 'Web Serial is not available'}</small>
+            </div>
+          </div>
+        </aside>
+
+        <section className="content">
+          <div className="content-header">
+            <div>
+              <div className="eyebrow">Runtime configuration</div>
+              <h2>Connect your keyboard</h2>
+              <p>
+                My ZMK Studio now uses the same patched ZMK Studio transport stack as DYA Studio.
+              </p>
+            </div>
+          </div>
+
+          <div className="panel" style={{ padding: 24 }}>
+            <h3>USB test</h3>
+            <p>Use Chrome or Edge on localhost, click Connect USB, and select the LoTom serial port.</p>
+            {!serialSupported && (
+              <p>Web Serial requires a Chromium-based browser and localhost or HTTPS.</p>
+            )}
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ZMKConnection
+      autoReconnect
+      renderDisconnected={({ connect, isLoading }) => (
+        <DisconnectedWorkspace connect={connect} isLoading={isLoading} />
+      )}
+      renderConnected={({ disconnect, deviceName }) => (
+        <ConnectedWorkspace disconnect={disconnect} deviceName={deviceName} />
+      )}
+    />
   );
 }
