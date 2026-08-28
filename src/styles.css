@@ -8,7 +8,7 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; background: #0b1220; }
-button, input { font: inherit; }
+button, input, select { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: 0.45; }
 
@@ -70,10 +70,20 @@ p { color: #9ca3af; margin-top: 8px; }
 .editor-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .selection-count { padding: 5px 9px; border-radius: 999px; color: #bfdbfe; background: #1e3a8a; font-size: 12px; white-space: nowrap; }
 .editor label, .field-label { display: grid; gap: 7px; color: #cbd5e1; font-size: 13px; font-weight: 600; }
-.editor input[type="text"], .editor input[type="number"] {
-  width: 100%; padding: 10px 11px; border: 1px solid #334155; border-radius: 9px; color: #f8fafc; background: #0f172a; outline: none;
+.editor input[type="text"], .editor input[type="number"], .editor select, .select-placeholder {
+  width: 100%;
+  padding: 10px 11px;
+  border: 1px solid #334155;
+  border-radius: 9px;
+  color: #f8fafc;
+  background: #0f172a;
+  outline: none;
 }
-.editor input:focus { border-color: #60a5fa; }
+.editor input:focus, .editor select:focus { border-color: #60a5fa; }
+.editor select { cursor: pointer; }
+.behavior-field { grid-column: span 2; }
+.behavior-field small { color: #94a3b8; font-weight: 500; }
+.select-placeholder { color: #94a3b8; font-weight: 500; }
 .form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .toggle-row { grid-template-columns: auto 1fr !important; align-items: center; justify-content: start; align-self: end; min-height: 42px; }
 
@@ -124,10 +134,12 @@ p { color: #9ca3af; margin-top: 8px; }
   .workspace { grid-template-columns: 1fr; }
   .sidebar { border-right: 0; border-bottom: 1px solid #1f2937; }
   .form-grid { grid-template-columns: 1fr 1fr; }
+  .behavior-field { grid-column: span 2; }
 }
 
 @media (max-width: 600px) {
   .content { padding: 18px; }
   .topbar { padding: 16px 18px; }
   .form-grid { grid-template-columns: 1fr; }
+  .behavior-field { grid-column: span 1; }
 }
