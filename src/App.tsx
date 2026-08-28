@@ -1,31 +1,46 @@
 import { useMemo, useState } from 'react';
+import {
+  DemoRuntimeComboClient,
+  type RuntimeCombo,
+} from './runtimeComboClient';
 
-type Combo = {
-  id: number;
-  name: string;
-  positions: number[];
-  behavior: string;
-  timeoutMs: number;
-  enabled: boolean;
-};
-
-const demoCombos: Combo[] = [
-  { id: 0, name: 'Escape', positions: [12, 13], behavior: '&kp ESC', timeoutMs: 40, enabled: true },
-  { id: 1, name: 'Tab', positions: [20, 21], behavior: '&kp TAB', timeoutMs: 45, enabled: true },
-];
+const client = new DemoRuntimeComboClient();
 
 export default function App() {
   const [connected, setConnected] = useState(false);
-  const [combos, setCombos] = useState<Combo[]>(demoCombos);
+  const [combos, setCombos] = useState<RuntimeCombo[]>([]);
   const [selectedId, setSelectedId] = useState(0);
   const [dirty, setDirty] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('Demo transport ready');
 
   const selected = useMemo(
     () => combos.find((combo) => combo.id === selectedId) ?? combos[0],
     [combos, selectedId],
   );
 
-  function updateSelected(patch: Partial<Combo>) {
+  async function toggleConnection() {
+    setBusy(true);
+    try {
+      if (connected) {
+        await client.disconnect();
+        setConnected(false);
+        setCombos([]);
+        setMessage('Disconnected');
+      } else {
+        await client.connect();
+        const loaded = await client.listCombos();
+        setCombos(loaded);
+        setSelectedId(loaded[0]?.id ?? 0);
+        setConnected(true);
+        setMessage(`Loaded ${loaded.length} combos`);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function updateSelected(patch: Partial<RuntimeCombo>) {
     setCombos((current) =>
       current.map((combo) => (combo.id === selectedId ? { ...combo, ...patch } : combo)),
     );
@@ -34,7 +49,7 @@ export default function App() {
 
   function addCombo() {
     const nextId = combos.length ? Math.max(...combos.map((combo) => combo.id)) + 1 : 0;
-    const next: Combo = {
+    const next: RuntimeCombo = {
       id: nextId,
       name: `Combo ${nextId}`,
       positions: [],
@@ -47,16 +62,38 @@ export default function App() {
     setDirty(true);
   }
 
-  function removeCombo() {
-    setCombos((current) => current.filter((combo) => combo.id !== selectedId));
-    setSelectedId(0);
-    setDirty(true);
+  async function removeCombo() {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      await client.deleteCombo(selected.id);
+      await client.save();
+      const reloaded = await client.listCombos();
+      setCombos(reloaded);
+      setSelectedId(reloaded[0]?.id ?? 0);
+      setDirty(false);
+      setMessage('Deleted and reloaded from device');
+    } finally {
+      setBusy(false);
+    }
   }
 
-  function save() {
-    // RPC integration comes next. The final flow will be:
-    // SetCombo -> success -> ListCombos -> replace UI state.
-    setDirty(false);
+  async function save() {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      await client.setCombo(selected);
+      await client.save();
+      // Important design rule: never trust local UI state after a save.
+      // Re-read from firmware so the list reflects what was actually persisted.
+      const reloaded = await client.listCombos();
+      setCombos(reloaded);
+      setSelectedId(selected.id);
+      setDirty(false);
+      setMessage('Saved and reloaded from device');
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -68,7 +105,8 @@ export default function App() {
         </div>
         <button
           className={connected ? 'button secondary' : 'button'}
-          onClick={() => setConnected((value) => !value)}
+          onClick={toggleConnection}
+          disabled={busy}
         >
           {connected ? 'Disconnect' : 'Connect'}
         </button>
@@ -81,7 +119,7 @@ export default function App() {
             <span className={connected ? 'status online' : 'status'} />
             <div>
               <strong>{connected ? 'Connected' : 'Not connected'}</strong>
-              <small>{connected ? 'Transport placeholder' : 'USB / BLE support next'}</small>
+              <small>{message}</small>
             </div>
           </div>
 
@@ -100,26 +138,32 @@ export default function App() {
               <h2>Combos</h2>
               <p>Edit combos without rebuilding firmware.</p>
             </div>
-            <button className="button" onClick={addCombo}>+ Add Combo</button>
+            <button className="button" onClick={addCombo} disabled={!connected || busy}>
+              + Add Combo
+            </button>
           </div>
 
           <div className="combo-layout">
             <div className="combo-list panel">
-              {combos.map((combo) => (
-                <button
-                  key={combo.id}
-                  className={combo.id === selectedId ? 'combo-row selected' : 'combo-row'}
-                  onClick={() => setSelectedId(combo.id)}
-                >
-                  <span>
-                    <strong>{combo.name}</strong>
-                    <small>#{combo.id} · {combo.positions.join(' + ') || 'No positions'}</small>
-                  </span>
-                  <span className={combo.enabled ? 'pill' : 'pill muted'}>
-                    {combo.enabled ? 'On' : 'Off'}
-                  </span>
-                </button>
-              ))}
+              {combos.length === 0 ? (
+                <div className="empty">Connect a device to load combos.</div>
+              ) : (
+                combos.map((combo) => (
+                  <button
+                    key={combo.id}
+                    className={combo.id === selectedId ? 'combo-row selected' : 'combo-row'}
+                    onClick={() => setSelectedId(combo.id)}
+                  >
+                    <span>
+                      <strong>{combo.name}</strong>
+                      <small>#{combo.id} · {combo.positions.join(' + ') || 'No positions'}</small>
+                    </span>
+                    <span className={combo.enabled ? 'pill' : 'pill muted'}>
+                      {combo.enabled ? 'On' : 'Off'}
+                    </span>
+                  </button>
+                ))
+              )}
             </div>
 
             {selected ? (
@@ -177,9 +221,9 @@ export default function App() {
                 </label>
 
                 <div className="actions">
-                  <button className="button danger" onClick={removeCombo}>Delete</button>
-                  <button className="button" disabled={!dirty} onClick={save}>
-                    {dirty ? 'Save changes' : 'Saved'}
+                  <button className="button danger" onClick={removeCombo} disabled={busy}>Delete</button>
+                  <button className="button" disabled={!dirty || busy} onClick={save}>
+                    {busy ? 'Working…' : dirty ? 'Save changes' : 'Saved'}
                   </button>
                 </div>
               </div>
