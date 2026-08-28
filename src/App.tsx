@@ -1,16 +1,43 @@
-import { useContext } from 'react';
+import { useState } from 'react';
 import {
-  ZMKAppContext,
-  ZMKConnection,
-  connectSerial,
-  isWebSerialSupported,
-} from '@cormoran/zmk-studio-react-hook';
+  create_rpc_connection,
+  type RpcConnection,
+} from '@zmkfirmware/zmk-studio-ts-client';
+import { connect as connectSerial } from '@zmkfirmware/zmk-studio-ts-client/transport/serial';
+import type { RpcTransport } from '@zmkfirmware/zmk-studio-ts-client/transport';
 
-const RUNTIME_COMBO_SUBSYSTEM_ID = 'cormoran__runtime_combo';
+export default function App() {
+  const [transport, setTransport] = useState<RpcTransport | null>(null);
+  const [connection, setConnection] = useState<RpcConnection | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('Chrome / Edge Web Serial ready');
 
-function ConnectedWorkspace({ disconnect, deviceName }: { disconnect: () => void; deviceName?: string }) {
-  const zmkApp = useContext(ZMKAppContext);
-  const runtimeCombo = zmkApp?.findSubsystem(RUNTIME_COMBO_SUBSYSTEM_ID);
+  const serialSupported = typeof navigator !== 'undefined' && 'serial' in navigator;
+  const connected = !!transport && !!connection;
+
+  async function connectUsb() {
+    setBusy(true);
+    setMessage('Opening USB serial connection…');
+    try {
+      const nextTransport = await connectSerial();
+      const nextConnection = create_rpc_connection(nextTransport);
+      setTransport(nextTransport);
+      setConnection(nextConnection);
+      setMessage(`Connected: ${nextTransport.label || 'ZMK device'}`);
+    } catch (error) {
+      const text = error instanceof Error ? error.message : String(error);
+      setMessage(`Connection failed: ${text}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function disconnectUsb() {
+    transport?.abortController.abort('Disconnected by user');
+    setTransport(null);
+    setConnection(null);
+    setMessage('Disconnected');
+  }
 
   return (
     <div className="app-shell">
@@ -19,17 +46,23 @@ function ConnectedWorkspace({ disconnect, deviceName }: { disconnect: () => void
           <div className="eyebrow">ZMK configuration UI</div>
           <h1>My ZMK Studio</h1>
         </div>
-        <button className="button secondary" onClick={disconnect}>Disconnect</button>
+        <button
+          className={connected ? 'button secondary' : 'button'}
+          onClick={connected ? disconnectUsb : connectUsb}
+          disabled={busy || (!connected && !serialSupported)}
+        >
+          {busy ? 'Connecting…' : connected ? 'Disconnect' : 'Connect USB'}
+        </button>
       </header>
 
       <main className="workspace">
         <aside className="sidebar">
           <div className="section-title">Device</div>
           <div className="device-card">
-            <span className="status online" />
+            <span className={connected ? 'status online' : 'status'} />
             <div>
-              <strong>{deviceName || 'ZMK device'}</strong>
-              <small>Connected over USB / Web Serial</small>
+              <strong>{connected ? 'ZMK device connected' : 'Not connected'}</strong>
+              <small>{message}</small>
             </div>
           </div>
 
@@ -45,105 +78,32 @@ function ConnectedWorkspace({ disconnect, deviceName }: { disconnect: () => void
           <div className="content-header">
             <div>
               <div className="eyebrow">Runtime configuration</div>
-              <h2>Combos</h2>
-              <p>USB connection is live. Runtime Combo RPC support is the next step.</p>
-            </div>
-          </div>
-
-          <div className="panel" style={{ padding: 24 }}>
-            <div className="section-title">Custom Subsystem</div>
-            {runtimeCombo ? (
-              <>
-                <h3>Runtime Combo detected</h3>
-                <p>
-                  <code>{RUNTIME_COMBO_SUBSYSTEM_ID}</code> was found at subsystem index{' '}
-                  <strong>{runtimeCombo.index}</strong>.
-                </p>
-                <p>
-                  The next implementation will call this subsystem directly to list, edit, and save combos.
-                </p>
-              </>
-            ) : (
-              <>
-                <h3>Runtime Combo not detected</h3>
-                <p>
-                  The keyboard connected successfully, but <code>{RUNTIME_COMBO_SUBSYSTEM_ID}</code> was not advertised.
-                </p>
-                <p>Confirm the Runtime Combo Studio RPC option is enabled in the firmware.</p>
-              </>
-            )}
-          </div>
-        </section>
-      </main>
-    </div>
-  );
-}
-
-function DisconnectedWorkspace({ connect, isLoading }: { connect: (factory: typeof connectSerial) => Promise<void>; isLoading: boolean }) {
-  const serialSupported = isWebSerialSupported();
-
-  return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div>
-          <div className="eyebrow">ZMK configuration UI</div>
-          <h1>My ZMK Studio</h1>
-        </div>
-        <button
-          className="button"
-          onClick={() => connect(connectSerial)}
-          disabled={!serialSupported || isLoading}
-        >
-          {isLoading ? 'Connecting…' : 'Connect USB'}
-        </button>
-      </header>
-
-      <main className="workspace">
-        <aside className="sidebar">
-          <div className="section-title">Device</div>
-          <div className="device-card">
-            <span className="status" />
-            <div>
-              <strong>Not connected</strong>
-              <small>{serialSupported ? 'Chrome / Edge Web Serial ready' : 'Web Serial is not available'}</small>
-            </div>
-          </div>
-        </aside>
-
-        <section className="content">
-          <div className="content-header">
-            <div>
-              <div className="eyebrow">Runtime configuration</div>
-              <h2>Connect your keyboard</h2>
+              <h2>{connected ? 'USB transport connected' : 'Connect your keyboard'}</h2>
               <p>
-                My ZMK Studio now uses the same patched ZMK Studio transport stack as DYA Studio.
+                My ZMK Studio uses cormoran's patched ZMK Studio TypeScript client directly.
               </p>
             </div>
           </div>
 
           <div className="panel" style={{ padding: 24 }}>
-            <h3>USB test</h3>
-            <p>Use Chrome or Edge on localhost, click Connect USB, and select the LoTom serial port.</p>
-            {!serialSupported && (
-              <p>Web Serial requires a Chromium-based browser and localhost or HTTPS.</p>
+            {connected ? (
+              <>
+                <h3>ZMK Studio RPC transport is live</h3>
+                <p>Transport label: <code>{transport?.label || 'unknown'}</code></p>
+                <p>Next step: query Custom Subsystems and detect <code>cormoran__runtime_combo</code>.</p>
+              </>
+            ) : (
+              <>
+                <h3>USB test</h3>
+                <p>Use Chrome or Edge on localhost, click Connect USB, and select the LoTom serial port.</p>
+                {!serialSupported && (
+                  <p>Web Serial is not available in this browser.</p>
+                )}
+              </>
             )}
           </div>
         </section>
       </main>
     </div>
-  );
-}
-
-export default function App() {
-  return (
-    <ZMKConnection
-      autoReconnect
-      renderDisconnected={({ connect, isLoading }) => (
-        <DisconnectedWorkspace connect={connect} isLoading={isLoading} />
-      )}
-      renderConnected={({ disconnect, deviceName }) => (
-        <ConnectedWorkspace disconnect={disconnect} deviceName={deviceName} />
-      )}
-    />
   );
 }
