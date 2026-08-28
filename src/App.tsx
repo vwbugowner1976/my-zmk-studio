@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   call_rpc,
   create_rpc_connection,
   type RpcConnection,
 } from '@zmkfirmware/zmk-studio-ts-client';
+import type { KeyPhysicalAttrs } from '@zmkfirmware/zmk-studio-ts-client/keymap';
 import { connect as connectSerial } from '@zmkfirmware/zmk-studio-ts-client/transport/serial';
 import type { RpcTransport } from '@zmkfirmware/zmk-studio-ts-client/transport';
 import {
@@ -21,6 +22,7 @@ import {
 } from './runtimeComboProtocol';
 
 const RUNTIME_COMBO_SUBSYSTEM_ID = 'cormoran__runtime_combo';
+const KEY_UNIT_PX = 42;
 
 type CustomSubsystem = {
   index: number;
@@ -37,6 +39,58 @@ const sourceLabel = (source: number) => {
 const hex = (bytes: Uint8Array) =>
   Array.from(bytes).map((value) => value.toString(16).padStart(2, '0')).join(' ');
 
+function PositionPicker({
+  keys,
+  selected,
+  onChange,
+}: {
+  keys: KeyPhysicalAttrs[] | null;
+  selected: number[];
+  onChange: (positions: number[]) => void;
+}) {
+  if (!keys?.length) {
+    return <p>Physical layout is not available from this firmware.</p>;
+  }
+
+  const toUnits = (value: number) => value / 100;
+  const maxX = Math.max(...keys.map((key) => toUnits(key.x) + toUnits(key.width)));
+  const maxY = Math.max(...keys.map((key) => toUnits(key.y) + toUnits(key.height)));
+
+  const toggle = (position: number) => {
+    const next = selected.includes(position)
+      ? selected.filter((value) => value !== position)
+      : [...selected, position].sort((a, b) => a - b);
+    onChange(next);
+  };
+
+  return (
+    <div className="layout-scroll">
+      <div
+        className="position-picker"
+        style={{ width: maxX * KEY_UNIT_PX, height: maxY * KEY_UNIT_PX }}
+      >
+        {keys.map((key, position) => (
+          <button
+            key={position}
+            type="button"
+            className={`position-key ${selected.includes(position) ? 'selected' : ''}`}
+            style={{
+              left: toUnits(key.x) * KEY_UNIT_PX,
+              top: toUnits(key.y) * KEY_UNIT_PX,
+              width: Math.max(30, toUnits(key.width) * KEY_UNIT_PX - 3),
+              height: Math.max(30, toUnits(key.height) * KEY_UNIT_PX - 3),
+            }}
+            onClick={() => toggle(position)}
+            title={`Position ${position}`}
+          >
+            {position}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [transport, setTransport] = useState<RpcTransport | null>(null);
   const [connection, setConnection] = useState<RpcConnection | null>(null);
@@ -45,15 +99,16 @@ export default function App() {
   const [comboError, setComboError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [draft, setDraft] = useState<RuntimeComboRecord | null>(null);
-  const [positionsText, setPositionsText] = useState('');
+  const [physicalKeys, setPhysicalKeys] = useState<KeyPhysicalAttrs[] | null>(null);
   const [debugLines, setDebugLines] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('Chrome / Edge Web Serial ready');
 
   const serialSupported = typeof navigator !== 'undefined' && 'serial' in navigator;
   const connected = !!transport && !!connection;
-  const runtimeCombo = subsystems.find(
-    (subsystem) => subsystem.identifier === RUNTIME_COMBO_SUBSYSTEM_ID,
+  const runtimeCombo = useMemo(
+    () => subsystems.find((subsystem) => subsystem.identifier === RUNTIME_COMBO_SUBSYSTEM_ID),
+    [subsystems],
   );
 
   function debug(event: string, detail?: unknown) {
@@ -91,6 +146,28 @@ export default function App() {
         `${Math.round(performance.now() - started)}ms ${error instanceof Error ? error.message : String(error)}`,
       );
       throw error;
+    }
+  }
+
+  async function readPhysicalLayout(nextConnection: RpcConnection) {
+    try {
+      debug('RPC -> keymap.getPhysicalLayouts');
+      const resp = await call_rpc(nextConnection, { keymap: { getPhysicalLayouts: true } });
+      const layouts = resp?.keymap?.getPhysicalLayouts;
+      if (!layouts) {
+        debug('Physical layout unavailable');
+        return null;
+      }
+      const layout = layouts.layouts[layouts.activeLayoutIndex];
+      const keys = layout?.keys ?? null;
+      debug('Physical layout loaded', {
+        activeLayoutIndex: layouts.activeLayoutIndex,
+        keyCount: keys?.length ?? 0,
+      });
+      return keys;
+    } catch (error) {
+      debug('Physical layout failed', error instanceof Error ? error.message : String(error));
+      return null;
     }
   }
 
@@ -154,6 +231,16 @@ export default function App() {
     }
   }
 
+  function selectCombo(combo: RuntimeComboRecord) {
+    setSelectedIndex(combo.index);
+    setDraft({ ...combo, keyPositions: [...combo.keyPositions] });
+    debug('Editor selected combo', { index: combo.index, name: combo.name });
+  }
+
+  useEffect(() => {
+    if (!connection) setPhysicalKeys(null);
+  }, [connection]);
+
   async function connectUsb() {
     setBusy(true);
     setComboError(null);
@@ -164,12 +251,13 @@ export default function App() {
       const nextTransport = await connectSerial();
       debug('Serial transport open', { label: nextTransport.label });
       const nextConnection = create_rpc_connection(nextTransport);
-      setMessage('USB connected. Querying Custom Subsystems…');
 
-      const response = await call_rpc(nextConnection, {
-        custom: { listCustomSubsystems: {} },
-      });
-      const detected = (response.custom?.listCustomSubsystems?.subsystems ?? []).map(
+      const [subsystemResponse, keys] = await Promise.all([
+        call_rpc(nextConnection, { custom: { listCustomSubsystems: {} } }),
+        readPhysicalLayout(nextConnection),
+      ]);
+
+      const detected = (subsystemResponse.custom?.listCustomSubsystems?.subsystems ?? []).map(
         (subsystem) => ({ index: subsystem.index, identifier: subsystem.identifier }),
       );
       debug('Custom Subsystems', detected);
@@ -182,22 +270,18 @@ export default function App() {
       let readMode = '';
 
       if (runtimeComboDetected) {
-        setMessage(`Runtime Combo detected at index ${runtimeComboDetected.index}. Reading combos…`);
-        try {
-          const result = await readRuntimeCombos(nextConnection, runtimeComboDetected.index);
-          loadedCombos = result.combos;
-          readMode = result.mode;
-          if (result.mode === 'indexed') {
-            localComboError = `list_combos failed (${result.listError}); recovered ${loadedCombos.length} combo(s) via get_combo over ${result.maxCombo} slots.`;
-          }
-        } catch (error) {
-          localComboError = error instanceof Error ? error.message : String(error);
+        const result = await readRuntimeCombos(nextConnection, runtimeComboDetected.index);
+        loadedCombos = result.combos;
+        readMode = result.mode;
+        if (result.mode === 'indexed') {
+          localComboError = `list_combos failed (${result.listError}); recovered ${loadedCombos.length} combo(s) via get_combo over ${result.maxCombo} slots.`;
         }
       }
 
       setTransport(nextTransport);
       setConnection(nextConnection);
       setSubsystems(detected);
+      setPhysicalKeys(keys);
       setCombos(loadedCombos);
       setComboError(localComboError);
 
@@ -226,68 +310,49 @@ export default function App() {
       setCombos(result.combos);
       if (result.mode === 'indexed') {
         setComboError(
-          `list_combos failed (${result.listError}); recovered ${result.combos.length} combo(s) via get_combo over ${result.maxCombo} slots.`,
+          `list_combos failed (${result.listError}); recovered ${result.combos.length} combo(s) via indexed fallback.`,
         );
       }
       const selected = selectedIndex === null
         ? null
         : result.combos.find((combo) => combo.index === selectedIndex) ?? null;
       if (selected) selectCombo(selected);
-      setMessage(
-        `Refreshed ${result.combos.length} Runtime Combo(s)${result.mode === 'indexed' ? ' using indexed fallback' : ''}.`,
-      );
+      setMessage(`Refreshed ${result.combos.length} Runtime Combo(s).`);
     } catch (error) {
-      const text = error instanceof Error ? error.message : String(error);
-      setComboError(text);
+      setComboError(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
     }
   }
 
-  function selectCombo(combo: RuntimeComboRecord) {
-    setSelectedIndex(combo.index);
-    setDraft({ ...combo, keyPositions: [...combo.keyPositions] });
-    setPositionsText(combo.keyPositions.join(', '));
-    debug('Editor selected combo', { index: combo.index, name: combo.name });
-  }
-
-  function parsePositions(): number[] {
-    const values = positionsText
-      .split(/[\s,]+/)
-      .map((value) => value.trim())
-      .filter(Boolean)
-      .map((value) => Number.parseInt(value, 10));
-    if (values.length < 2 || values.some((value) => !Number.isFinite(value) || value < 0)) {
-      throw new Error('Positions must contain at least two non-negative numbers.');
-    }
-    return values;
-  }
-
   async function saveDraft() {
     if (!connection || !runtimeCombo || !draft) return;
+    if (draft.keyPositions.length < 2) {
+      setComboError('Select at least two keys for a combo.');
+      return;
+    }
+
     setBusy(true);
     setComboError(null);
     try {
-      const nextDraft = { ...draft, keyPositions: parsePositions() };
-      debug('Save flow begin', nextDraft);
+      debug('Save flow begin', draft);
 
       const setPayload = await callRuntimeCombo(
         connection,
         runtimeCombo.index,
-        encodeSetComboRequest(nextDraft, false),
-        `set_combo(${nextDraft.index})`,
+        encodeSetComboRequest(draft, false),
+        `set_combo(${draft.index})`,
       );
       debug('set_combo status', decodeStatusResponse(setPayload));
 
       const namePayload = await callRuntimeCombo(
         connection,
         runtimeCombo.index,
-        encodeSetComboNameRequest(nextDraft.index, nextDraft.name, false),
-        `set_combo_name(${nextDraft.index})`,
+        encodeSetComboNameRequest(draft.index, draft.name, false),
+        `set_combo_name(${draft.index})`,
       );
       debug('set_combo_name status', decodeStatusResponse(namePayload));
 
-      setMessage('Combo updated in RAM. Saving to flash…');
       const saveStarted = performance.now();
       const savePayload = await callRuntimeCombo(
         connection,
@@ -301,16 +366,13 @@ export default function App() {
         elapsedMs: Math.round(performance.now() - saveStarted),
       });
 
-      setMessage(`Saved. Firmware reported ${saveStatus.affectedCount} affected setting(s). Re-reading…`);
       const result = await readRuntimeCombos(connection, runtimeCombo.index);
       setCombos(result.combos);
-      const saved = result.combos.find((combo) => combo.index === nextDraft.index) ?? null;
+      const saved = result.combos.find((combo) => combo.index === draft.index) ?? null;
       if (saved) selectCombo(saved);
-      setMessage(`Saved combo #${nextDraft.index} and re-read ${result.combos.length} combo(s).`);
+      setMessage(`Saved combo #${draft.index} and re-read ${result.combos.length} combo(s).`);
       if (result.mode === 'indexed') {
-        setComboError(
-          `list_combos still failed (${result.listError}); re-read succeeded via indexed fallback.`,
-        );
+        setComboError(`list_combos still failed (${result.listError}); indexed re-read succeeded.`);
       }
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error);
@@ -334,6 +396,7 @@ export default function App() {
     setConnection(null);
     setSubsystems([]);
     setCombos([]);
+    setPhysicalKeys(null);
     setComboError(null);
     setSelectedIndex(null);
     setDraft(null);
@@ -343,8 +406,15 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div><div className="eyebrow">ZMK configuration UI</div><h1>My ZMK Studio</h1></div>
-        <button className={connected ? 'button secondary' : 'button'} onClick={connected ? disconnectUsb : connectUsb} disabled={busy || (!connected && !serialSupported)}>
+        <div>
+          <div className="eyebrow">ZMK configuration UI</div>
+          <h1>My ZMK Studio</h1>
+        </div>
+        <button
+          className={connected ? 'button secondary' : 'button'}
+          onClick={connected ? disconnectUsb : connectUsb}
+          disabled={busy || (!connected && !serialSupported)}
+        >
           {busy ? 'Working…' : connected ? 'Disconnect' : 'Connect USB'}
         </button>
       </header>
@@ -354,7 +424,10 @@ export default function App() {
           <div className="section-title">Device</div>
           <div className="device-card">
             <span className={connected ? 'status online' : 'status'} />
-            <div><strong>{connected ? 'ZMK device connected' : 'Not connected'}</strong><small>{message}</small></div>
+            <div>
+              <strong>{connected ? 'ZMK device connected' : 'Not connected'}</strong>
+              <small>{message}</small>
+            </div>
           </div>
           <nav className="nav-list">
             <button className="nav-item active">Runtime Combo</button>
@@ -366,69 +439,168 @@ export default function App() {
 
         <section className="content">
           <div className="content-header">
-            <div><div className="eyebrow">Runtime configuration</div><h2>{connected ? 'Runtime Combo' : 'Connect your keyboard'}</h2><p>Direct DYA-compatible Custom Studio RPC.</p></div>
-            {connected && runtimeCombo && <button className="button" onClick={refreshCombos} disabled={busy}>Refresh</button>}
-          </div>
-
-          <div className="panel" style={{ padding: 24 }}>
-            {connected ? (
-              <>
-                <h3>ZMK Studio RPC is live</h3>
-                <p>Transport label: <code>{transport?.label || 'unknown'}</code></p>
-                {runtimeCombo ? (
-                  <>
-                    <p><code>{runtimeCombo.identifier}</code> · subsystem <strong>#{runtimeCombo.index}</strong></p>
-                    {comboError && <p>Runtime Combo note: <code>{comboError}</code></p>}
-                    <h3>Combos from firmware</h3>
-                    <p>{combos.length} combo(s) returned by the device. Click one to edit.</p>
-                    {combos.length ? (
-                      <div className="combo-list">
-                        {combos.map((combo) => (
-                          <button className="combo-row" key={combo.index} onClick={() => selectCombo(combo)} style={{ width: '100%', textAlign: 'left' }}>
-                            <span>
-                              <strong>#{combo.index} {combo.name || 'Unnamed combo'}</strong>
-                              <small>{combo.keyPositions.join(' + ') || 'No positions'} · behavior #{combo.behaviorId} ({combo.param1}, {combo.param2}) · timeout {combo.timeoutMs} ms</small>
-                            </span>
-                            <span className={combo.enabled ? 'pill' : 'pill muted'}>{sourceLabel(combo.source)} / {combo.enabled ? 'On' : 'Off'}</span>
-                          </button>
-                        ))}
-                      </div>
-                    ) : <p>No Runtime Combos were returned.</p>}
-                  </>
-                ) : <><h3>Runtime Combo not detected</h3><p>Expected subsystem: <code>{RUNTIME_COMBO_SUBSYSTEM_ID}</code></p></>}
-              </>
-            ) : (
-              <><h3>USB test</h3><p>Use Chrome or Edge on localhost, click Connect USB, and select the LoTom serial port.</p>{!serialSupported && <p>Web Serial is not available in this browser.</p>}</>
+            <div>
+              <div className="eyebrow">Runtime configuration</div>
+              <h2>{connected ? 'Runtime Combo' : 'Connect your keyboard'}</h2>
+              <p>Direct DYA-compatible Custom Studio RPC.</p>
+            </div>
+            {connected && runtimeCombo && (
+              <button className="button" onClick={refreshCombos} disabled={busy}>Refresh</button>
             )}
           </div>
 
-          {connected && draft && (
-            <div className="panel" style={{ padding: 24, marginTop: 16 }}>
-              <h3>Edit combo #{draft.index}</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-                <label>Name<input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></label>
-                <label>Positions<input value={positionsText} onChange={(e) => setPositionsText(e.target.value)} placeholder="12, 13" /></label>
-                <label>Behavior ID<input type="number" min="0" value={draft.behaviorId} onChange={(e) => setDraft({ ...draft, behaviorId: Number(e.target.value) })} /></label>
-                <label>Param 1<input type="number" min="0" value={draft.param1} onChange={(e) => setDraft({ ...draft, param1: Number(e.target.value) })} /></label>
-                <label>Param 2<input type="number" min="0" value={draft.param2} onChange={(e) => setDraft({ ...draft, param2: Number(e.target.value) })} /></label>
-                <label>Timeout ms<input type="number" min="0" max="65535" value={draft.timeoutMs} onChange={(e) => setDraft({ ...draft, timeoutMs: Number(e.target.value) })} /></label>
-                <label>Layer mask<input type="number" min="0" value={draft.layerMask} onChange={(e) => setDraft({ ...draft, layerMask: Number(e.target.value) })} /></label>
-                <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}><input type="checkbox" checked={draft.enabled} onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })} />Enabled</label>
-              </div>
-              <div style={{ marginTop: 16 }}>
-                <button className="button" onClick={saveDraft} disabled={busy}>Save to firmware</button>
+          {!connected ? (
+            <div className="panel empty">
+              <div>
+                <h3>USB test</h3>
+                <p>Connect a ZMK Studio enabled keyboard with Chrome or Edge.</p>
               </div>
             </div>
-          )}
+          ) : (
+            <>
+              <div className="status-strip panel">
+                <span>ZMK Studio RPC live</span>
+                <code>{transport?.label || 'unknown'}</code>
+                {runtimeCombo && <code>{runtimeCombo.identifier} #{runtimeCombo.index}</code>}
+              </div>
 
-          {connected && (
-            <div className="panel" style={{ padding: 24, marginTop: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                <h3>Debug Log</h3>
-                <button className="button secondary" onClick={copyDebugLog} disabled={!debugLines.length}>Copy Debug Log</button>
+              {comboError && <div className="notice">{comboError}</div>}
+
+              <div className="runtime-grid">
+                <section className="panel combo-panel">
+                  <div className="panel-heading">
+                    <div>
+                      <h3>Combos from firmware</h3>
+                      <p>{combos.length} combo(s). Click one to edit.</p>
+                    </div>
+                  </div>
+                  <div className="combo-scroll-box">
+                    {combos.length ? combos.map((combo) => (
+                      <button
+                        className={`combo-row ${selectedIndex === combo.index ? 'selected' : ''}`}
+                        key={combo.index}
+                        onClick={() => selectCombo(combo)}
+                      >
+                        <span>
+                          <strong>#{combo.index} {combo.name || 'Unnamed combo'}</strong>
+                          <small>
+                            {combo.keyPositions.join(' + ') || 'No positions'} · behavior #{combo.behaviorId}
+                          </small>
+                        </span>
+                        <span className={combo.enabled ? 'pill' : 'pill muted'}>
+                          {sourceLabel(combo.source)} / {combo.enabled ? 'On' : 'Off'}
+                        </span>
+                      </button>
+                    )) : <p>No Runtime Combos were returned.</p>}
+                  </div>
+                </section>
+
+                <section className="panel editor">
+                  {draft ? (
+                    <>
+                      <div className="editor-title">
+                        <div>
+                          <h3>Edit Combo #{draft.index}</h3>
+                          <p>Select keys directly from the keyboard layout.</p>
+                        </div>
+                        <span className="selection-count">{draft.keyPositions.length} keys selected</span>
+                      </div>
+
+                      <label>
+                        Name
+                        <input
+                          type="text"
+                          value={draft.name}
+                          onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                        />
+                      </label>
+
+                      <div>
+                        <div className="field-label">Key positions</div>
+                        <PositionPicker
+                          keys={physicalKeys}
+                          selected={draft.keyPositions}
+                          onChange={(keyPositions) => setDraft({ ...draft, keyPositions })}
+                        />
+                        <p>Selected: {draft.keyPositions.join(', ') || 'none'}</p>
+                      </div>
+
+                      <div className="form-grid">
+                        <label>
+                          Behavior ID
+                          <input
+                            type="number"
+                            value={draft.behaviorId}
+                            onChange={(event) => setDraft({ ...draft, behaviorId: Number(event.target.value) })}
+                          />
+                        </label>
+                        <label>
+                          Param 1
+                          <input
+                            type="number"
+                            value={draft.param1}
+                            onChange={(event) => setDraft({ ...draft, param1: Number(event.target.value) })}
+                          />
+                        </label>
+                        <label>
+                          Param 2
+                          <input
+                            type="number"
+                            value={draft.param2}
+                            onChange={(event) => setDraft({ ...draft, param2: Number(event.target.value) })}
+                          />
+                        </label>
+                        <label>
+                          Timeout ms
+                          <input
+                            type="number"
+                            value={draft.timeoutMs}
+                            onChange={(event) => setDraft({ ...draft, timeoutMs: Number(event.target.value) })}
+                          />
+                        </label>
+                        <label>
+                          Layer mask
+                          <input
+                            type="number"
+                            value={draft.layerMask}
+                            onChange={(event) => setDraft({ ...draft, layerMask: Number(event.target.value) })}
+                          />
+                        </label>
+                        <label className="toggle-row">
+                          <input
+                            type="checkbox"
+                            checked={draft.enabled}
+                            onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })}
+                          />
+                          Enabled
+                        </label>
+                      </div>
+
+                      <div className="actions">
+                        <button className="button" onClick={saveDraft} disabled={busy || draft.keyPositions.length < 2}>
+                          Save to firmware
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="empty">Select a combo from the list.</div>
+                  )}
+                </section>
               </div>
-              <pre style={{ whiteSpace: 'pre-wrap', maxHeight: 320, overflow: 'auto', fontSize: 12 }}>{debugLines.join('\n') || 'No debug events yet.'}</pre>
-            </div>
+
+              <section className="panel debug-panel">
+                <div className="panel-heading">
+                  <div>
+                    <h3>Debug Log</h3>
+                    <p>RPC timings and payload trace for development.</p>
+                  </div>
+                  <button className="button secondary" onClick={copyDebugLog} disabled={!debugLines.length}>
+                    Copy Debug Log
+                  </button>
+                </div>
+                <pre>{debugLines.join('\n') || 'No debug events yet.'}</pre>
+              </section>
+            </>
           )}
         </section>
       </main>
