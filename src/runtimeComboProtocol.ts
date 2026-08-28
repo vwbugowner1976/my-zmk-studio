@@ -13,7 +13,32 @@ export type RuntimeComboRecord = {
   source: number;
 };
 
+export type RuntimeComboGlobalSettings = {
+  timeoutMs: number;
+  slowRelease: boolean;
+  maxCombo: number;
+  requirePriorIdleMs: number;
+};
+
 export const encodeListCombosRequest = () => new Uint8Array([0x0a, 0x00]);
+export const encodeGetGlobalSettingsRequest = () => new Uint8Array([0x32, 0x00]);
+
+function encodeVarint(value: number): number[] {
+  const bytes: number[] = [];
+  let v = value >>> 0;
+  do {
+    let b = v & 0x7f;
+    v >>>= 7;
+    if (v) b |= 0x80;
+    bytes.push(b);
+  } while (v);
+  return bytes;
+}
+
+export function encodeGetComboRequest(index: number): Uint8Array {
+  const inner = index === 0 ? [] : [0x08, ...encodeVarint(index)];
+  return new Uint8Array([0x12, inner.length, ...inner]);
+}
 
 class Reader {
   private pos = 0;
@@ -47,6 +72,19 @@ class Reader {
     if (wireType === 1) { this.pos += 8; return; }
     throw new Error(`Unsupported protobuf wire type ${wireType}`);
   }
+}
+
+function decodeError(bytes: Uint8Array): string {
+  const reader = new Reader(bytes);
+  let message = 'Runtime Combo RPC error';
+  while (!reader.done) {
+    const tag = reader.uint32();
+    const field = tag >>> 3;
+    const wire = tag & 7;
+    if (field === 1 && wire === 2) message = reader.string();
+    else reader.skip(wire);
+  }
+  return message;
 }
 
 function decodeBehavior(bytes: Uint8Array) {
@@ -137,20 +175,73 @@ export function decodeRuntimeComboResponse(bytes: Uint8Array): RuntimeComboRecor
     const tag = reader.uint32();
     const field = tag >>> 3;
     const wire = tag & 7;
-    if (field === 1 && wire === 2) {
-      const errorReader = new Reader(reader.bytesValue());
-      let message = 'Runtime Combo RPC error';
-      while (!errorReader.done) {
-        const errorTag = errorReader.uint32();
-        const errorField = errorTag >>> 3;
-        const errorWire = errorTag & 7;
-        if (errorField === 1 && errorWire === 2) message = errorReader.string();
-        else errorReader.skip(errorWire);
-      }
-      throw new Error(message);
-    }
+    if (field === 1 && wire === 2) throw new Error(decodeError(reader.bytesValue()));
     if (field === 2 && wire === 2) return decodeListCombosResponse(reader.bytesValue());
     reader.skip(wire);
   }
   return [];
+}
+
+export function decodeGetComboResponse(bytes: Uint8Array): RuntimeComboRecord | null {
+  const reader = new Reader(bytes);
+  while (!reader.done) {
+    const tag = reader.uint32();
+    const field = tag >>> 3;
+    const wire = tag & 7;
+    if (field === 1 && wire === 2) throw new Error(decodeError(reader.bytesValue()));
+    if (field === 3 && wire === 2) {
+      const getReader = new Reader(reader.bytesValue());
+      while (!getReader.done) {
+        const innerTag = getReader.uint32();
+        const innerField = innerTag >>> 3;
+        const innerWire = innerTag & 7;
+        if (innerField === 1 && innerWire === 2) return decodeCombo(getReader.bytesValue());
+        getReader.skip(innerWire);
+      }
+      return null;
+    }
+    reader.skip(wire);
+  }
+  return null;
+}
+
+export function decodeGlobalSettingsResponse(bytes: Uint8Array): RuntimeComboGlobalSettings {
+  const reader = new Reader(bytes);
+  while (!reader.done) {
+    const tag = reader.uint32();
+    const field = tag >>> 3;
+    const wire = tag & 7;
+    if (field === 1 && wire === 2) throw new Error(decodeError(reader.bytesValue()));
+    if (field === 5 && wire === 2) {
+      const outer = new Reader(reader.bytesValue());
+      while (!outer.done) {
+        const outerTag = outer.uint32();
+        const outerField = outerTag >>> 3;
+        const outerWire = outerTag & 7;
+        if (outerField === 1 && outerWire === 2) {
+          const settingsReader = new Reader(outer.bytesValue());
+          const settings: RuntimeComboGlobalSettings = {
+            timeoutMs: 0,
+            slowRelease: false,
+            maxCombo: 0,
+            requirePriorIdleMs: 0,
+          };
+          while (!settingsReader.done) {
+            const settingsTag = settingsReader.uint32();
+            const settingsField = settingsTag >>> 3;
+            const settingsWire = settingsTag & 7;
+            if (settingsField === 1) settings.timeoutMs = settingsReader.uint32();
+            else if (settingsField === 2) settings.slowRelease = settingsReader.uint32() !== 0;
+            else if (settingsField === 3) settings.maxCombo = settingsReader.uint32();
+            else if (settingsField === 4) settings.requirePriorIdleMs = settingsReader.uint32();
+            else settingsReader.skip(settingsWire);
+          }
+          return settings;
+        }
+        outer.skip(outerWire);
+      }
+    }
+    reader.skip(wire);
+  }
+  throw new Error('Runtime Combo global settings were not returned');
 }
