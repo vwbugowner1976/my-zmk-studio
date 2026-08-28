@@ -1,7 +1,7 @@
 {
   "name": "my-zmk-studio",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@cormoran/zmk-studio-react-hook": "github:cormoran/react-zmk-studio",
+    "@zmkfirmware/zmk-studio-ts-client": "github:cormoran/zmk-studio-ts-client#custom-studio-protocol+bluefy",
     "@vitejs/plugin-react": "latest",
     "vite": "latest",
     "typescript": "latest",
