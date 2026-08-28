@@ -9,7 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@cormoran/zmk-studio-react-hook": "github:cormoran/react-zmk-studio",
     "@vitejs/plugin-react": "latest",
     "@zmkfirmware/zmk-studio-ts-client": "github:cormoran/zmk-studio-ts-client#custom-studio-protocol+bluefy",
     "vite": "latest",
