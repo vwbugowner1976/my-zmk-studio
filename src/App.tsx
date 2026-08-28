@@ -6,6 +6,11 @@ import {
 } from '@zmkfirmware/zmk-studio-ts-client';
 import { connect as connectSerial } from '@zmkfirmware/zmk-studio-ts-client/transport/serial';
 import type { RpcTransport } from '@zmkfirmware/zmk-studio-ts-client/transport';
+import {
+  decodeRuntimeComboResponse,
+  encodeListCombosRequest,
+  type RuntimeComboRecord,
+} from './runtimeComboProtocol';
 
 const RUNTIME_COMBO_SUBSYSTEM_ID = 'cormoran__runtime_combo';
 
@@ -14,10 +19,19 @@ type CustomSubsystem = {
   identifier: string;
 };
 
+const sourceLabel = (source: number) => {
+  if (source === 1) return 'Default';
+  if (source === 2) return 'Overridden';
+  if (source === 3) return 'Runtime';
+  return 'Empty';
+};
+
 export default function App() {
   const [transport, setTransport] = useState<RpcTransport | null>(null);
   const [connection, setConnection] = useState<RpcConnection | null>(null);
   const [subsystems, setSubsystems] = useState<CustomSubsystem[]>([]);
+  const [combos, setCombos] = useState<RuntimeComboRecord[]>([]);
+  const [comboError, setComboError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('Chrome / Edge Web Serial ready');
 
@@ -27,8 +41,24 @@ export default function App() {
     (subsystem) => subsystem.identifier === RUNTIME_COMBO_SUBSYSTEM_ID,
   );
 
+  async function readRuntimeCombos(nextConnection: RpcConnection, subsystemIndex: number) {
+    const response = await call_rpc(nextConnection, {
+      custom: {
+        call: {
+          subsystemIndex,
+          payload: encodeListCombosRequest(),
+        },
+      },
+    });
+
+    const payload = response.custom?.call?.payload;
+    if (!payload) throw new Error('Runtime Combo returned no payload');
+    return decodeRuntimeComboResponse(payload);
+  }
+
   async function connectUsb() {
     setBusy(true);
+    setComboError(null);
     setMessage('Opening USB serial connection…');
     try {
       const nextTransport = await connectSerial();
@@ -47,19 +77,29 @@ export default function App() {
         }),
       );
 
-      setTransport(nextTransport);
-      setConnection(nextConnection);
-      setSubsystems(detected);
-
       const runtimeComboDetected = detected.find(
         (subsystem) => subsystem.identifier === RUNTIME_COMBO_SUBSYSTEM_ID,
       );
 
+      let loadedCombos: RuntimeComboRecord[] = [];
       if (runtimeComboDetected) {
-        setMessage(
-          `Connected. Runtime Combo detected at subsystem index ${runtimeComboDetected.index}.`,
-        );
-      } else {
+        setMessage(`Runtime Combo detected at index ${runtimeComboDetected.index}. Reading combos…`);
+        try {
+          loadedCombos = await readRuntimeCombos(nextConnection, runtimeComboDetected.index);
+        } catch (error) {
+          const text = error instanceof Error ? error.message : String(error);
+          setComboError(text);
+        }
+      }
+
+      setTransport(nextTransport);
+      setConnection(nextConnection);
+      setSubsystems(detected);
+      setCombos(loadedCombos);
+
+      if (runtimeComboDetected && !comboError) {
+        setMessage(`Connected. Read ${loadedCombos.length} Runtime Combo(s).`);
+      } else if (!runtimeComboDetected) {
         setMessage(`Connected. ${detected.length} Custom Subsystem(s) detected.`);
       }
     } catch (error) {
@@ -70,11 +110,29 @@ export default function App() {
     }
   }
 
+  async function refreshCombos() {
+    if (!connection || !runtimeCombo) return;
+    setBusy(true);
+    setComboError(null);
+    try {
+      const loaded = await readRuntimeCombos(connection, runtimeCombo.index);
+      setCombos(loaded);
+      setMessage(`Refreshed ${loaded.length} Runtime Combo(s).`);
+    } catch (error) {
+      const text = error instanceof Error ? error.message : String(error);
+      setComboError(text);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function disconnectUsb() {
     transport?.abortController.abort('Disconnected by user');
     setTransport(null);
     setConnection(null);
     setSubsystems([]);
+    setCombos([]);
+    setComboError(null);
     setMessage('Disconnected');
   }
 
@@ -90,7 +148,7 @@ export default function App() {
           onClick={connected ? disconnectUsb : connectUsb}
           disabled={busy || (!connected && !serialSupported)}
         >
-          {busy ? 'Connecting…' : connected ? 'Disconnect' : 'Connect USB'}
+          {busy ? 'Working…' : connected ? 'Disconnect' : 'Connect USB'}
         </button>
       </header>
 
@@ -117,9 +175,12 @@ export default function App() {
           <div className="content-header">
             <div>
               <div className="eyebrow">Runtime configuration</div>
-              <h2>{connected ? 'Custom Subsystem discovery' : 'Connect your keyboard'}</h2>
-              <p>My ZMK Studio uses cormoran's patched ZMK Studio TypeScript client directly.</p>
+              <h2>{connected ? 'Runtime Combo' : 'Connect your keyboard'}</h2>
+              <p>My ZMK Studio talks directly to the DYA-compatible Custom Studio RPC.</p>
             </div>
+            {connected && runtimeCombo && (
+              <button className="button" onClick={refreshCombos} disabled={busy}>Refresh</button>
+            )}
           </div>
 
           <div className="panel" style={{ padding: 24 }}>
@@ -135,14 +196,40 @@ export default function App() {
                       <code>{runtimeCombo.identifier}</code> is available at subsystem index{' '}
                       <strong>{runtimeCombo.index}</strong>.
                     </p>
-                    <p>Next step: call the Runtime Combo subsystem and read the actual combo list.</p>
+
+                    {comboError ? (
+                      <p>Runtime Combo RPC error: <code>{comboError}</code></p>
+                    ) : (
+                      <>
+                        <h3>Combos from firmware</h3>
+                        <p>{combos.length} combo(s) returned by the device.</p>
+                        {combos.length ? (
+                          <div className="combo-list">
+                            {combos.map((combo) => (
+                              <div className="combo-row" key={combo.index}>
+                                <span>
+                                  <strong>#{combo.index} {combo.name || 'Unnamed combo'}</strong>
+                                  <small>
+                                    {combo.keyPositions.join(' + ') || 'No positions'} · behavior #{combo.behaviorId}
+                                    {' '}({combo.param1}, {combo.param2}) · timeout {combo.timeoutMs} ms
+                                  </small>
+                                </span>
+                                <span className={combo.enabled ? 'pill' : 'pill muted'}>
+                                  {sourceLabel(combo.source)} / {combo.enabled ? 'On' : 'Off'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p>No Runtime Combos were returned.</p>
+                        )}
+                      </>
+                    )}
                   </>
                 ) : (
                   <>
                     <h3>Runtime Combo not detected</h3>
-                    <p>
-                      Expected subsystem: <code>{RUNTIME_COMBO_SUBSYSTEM_ID}</code>
-                    </p>
+                    <p>Expected subsystem: <code>{RUNTIME_COMBO_SUBSYSTEM_ID}</code></p>
                   </>
                 )}
 
