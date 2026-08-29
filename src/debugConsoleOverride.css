@@ -1,3 +1,23 @@
 .debug-panel {
   display: none;
 }
+
+.global-debug-header.draggable {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.global-debug-header.draggable:active {
+  cursor: grabbing;
+}
+
+.global-debug-header.draggable button {
+  cursor: pointer;
+  user-select: auto;
+  touch-action: auto;
+}
+
+.global-debug-console.moved {
+  transition: none;
+}
