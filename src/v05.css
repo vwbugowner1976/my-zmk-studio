@@ -36,8 +36,63 @@
 .import-preview { border-color: #7c3aed; }
 .import-preview h3 { color: #f8fafc; }
 .backup-message { margin-bottom: 0; }
+.backup-layer-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.backup-layer-tabs .layer-tab { position: relative; }
+.backup-layer-tabs .layer-tab em {
+  min-width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  color: #fff;
+  background: #b45309;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+}
+.backup-diff-panel { overflow: hidden; }
+.backup-diff-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #1f2937;
+}
+.backup-diff-header strong { color: #e5e7eb; }
+.backup-filter { display: flex; align-items: center; gap: 8px; color: #cbd5e1; font-size: 13px; }
+.layer-name-diff {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  border-bottom: 1px solid #1f2937;
+  color: #cbd5e1;
+  background: #2a1b08;
+}
+.layer-name-diff code { color: #fdba74; overflow-wrap: anywhere; }
+.backup-diff-table-wrap { overflow-x: auto; }
+.backup-diff-table { width: 100%; border-collapse: collapse; min-width: 720px; }
+.backup-diff-table th,
+.backup-diff-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid #1f2937;
+  text-align: left;
+  vertical-align: top;
+}
+.backup-diff-table th { color: #94a3b8; background: #0f172a; font-size: 11px; text-transform: uppercase; }
+.backup-diff-table td { color: #cbd5e1; }
+.backup-diff-table code { color: #cbd5e1; white-space: normal; overflow-wrap: anywhere; }
+.backup-diff-table tr.changed td { background: #2a1b08; }
+.backup-diff-table tr.changed td:last-child { color: #fdba74; font-weight: 700; }
+.backup-no-diff { padding: 24px; color: #94a3b8; text-align: center; }
 
 @media (max-width: 900px) {
   .backup-toolbar,
-  .import-preview { align-items: flex-start; flex-direction: column; }
+  .import-preview,
+  .backup-diff-header { align-items: flex-start; flex-direction: column; }
+  .layer-name-diff { grid-template-columns: 1fr; }
 }
