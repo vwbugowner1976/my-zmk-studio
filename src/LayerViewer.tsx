@@ -60,9 +60,6 @@ function decodeHidUsage(value: number) {
   else if (page === 0x0c) key = CONSUMER_USAGE[usage] ?? `Consumer 0x${usage.toString(16).toUpperCase()}`;
   else key = `HID ${page.toString(16).toUpperCase()}:${usage.toString(16).toUpperCase()}`;
 
-  // ZMK can encode a modifier either as a keyboard usage (E0-E7) or in the
-  // modifier bit field attached to another HID usage. Avoid duplicated labels
-  // if both representations point to the same modifier.
   const combined = [...prefix, key];
   return combined.filter((item, index) => combined.indexOf(item) === index).join('+');
 }
@@ -112,12 +109,8 @@ function behaviorLabel(binding: BehaviorBinding | undefined, options: BehaviorOp
   const p2 = describeParam(option, 2, binding.param2);
   const args = [p1.text, p2.text].filter(Boolean);
 
-  if (/transparent/i.test(name)) {
-    return { title: '▽', subtitle: 'Transparent', detail: name };
-  }
-  if (/none|disabled/i.test(name)) {
-    return { title: '—', subtitle: name, detail: name };
-  }
+  if (/transparent/i.test(name)) return { title: '▽', subtitle: 'Transparent', detail: name };
+  if (/none|disabled/i.test(name)) return { title: '—', subtitle: name, detail: name };
   if (p1.kind === 'hid' && !p2.text && /key press|keypress/i.test(name)) {
     return { title: p1.text, subtitle: name, detail: `${p1.text} · ${name}` };
   }
@@ -163,12 +156,16 @@ function LayerSvg({
   keys,
   behaviorOptions,
   svgRef,
+  selectedPosition = null,
+  onSelectPosition,
 }: {
   layer: Layer;
   layerIndex: number;
   keys: KeyPhysicalAttrs[];
   behaviorOptions: BehaviorOption[] | null;
   svgRef?: React.Ref<SVGSVGElement>;
+  selectedPosition?: number | null;
+  onSelectPosition?: (position: number) => void;
 }) {
   const g = geometry(keys);
   const [hovered, setHovered] = useState<HoveredKey | null>(null);
@@ -188,7 +185,7 @@ function LayerSvg({
         Layer {layerIndex}: {layer.name || `Layer ${layerIndex}`}
       </text>
       <text x={PADDING} y={49} fill="#94a3b8" fontSize="11">
-        My ZMK Studio · read from firmware
+        My ZMK Studio · click a key to edit
       </text>
 
       {keys.map((key, position) => {
@@ -205,20 +202,26 @@ function LayerSvg({
         const transform = key.r ? `rotate(${key.r} ${rx} ${ry})` : undefined;
         const titleFontSize = label.title.length <= maxChars ? 11 : 9.5;
         const centerY = y + height / 2;
+        const selected = selectedPosition === position;
 
         return (
           <g
             key={position}
             transform={transform}
-            className="layer-key-group"
-            onMouseEnter={() => setHovered({
-              position,
-              label,
-              x: x + width / 2,
-              y: y,
-            })}
+            className={`layer-key-group ${onSelectPosition ? 'editable' : ''} ${selected ? 'selected' : ''}`}
+            onClick={onSelectPosition ? () => onSelectPosition(position) : undefined}
+            onMouseEnter={() => setHovered({ position, label, x: x + width / 2, y })}
           >
-            <rect x={x} y={y} width={width} height={height} rx="7" fill="#1e293b" stroke="#475569" strokeWidth="1" />
+            <rect
+              x={x}
+              y={y}
+              width={width}
+              height={height}
+              rx="7"
+              fill={selected ? '#172554' : '#1e293b'}
+              stroke={selected ? '#60a5fa' : '#475569'}
+              strokeWidth={selected ? '2.5' : '1'}
+            />
             {titleLines.map((line, lineIndex) => (
               <text
                 key={lineIndex}
@@ -237,7 +240,7 @@ function LayerSvg({
                 {subtitle}
               </text>
             )}
-            <text x={x + 5} y={y + 11} fill="#64748b" fontSize="7">{position}</text>
+            <text x={x + 5} y={y + 11} fill={selected ? '#93c5fd' : '#64748b'} fontSize="7">{position}</text>
           </g>
         );
       })}
@@ -250,27 +253,11 @@ function LayerSvg({
         const py = preferredY > HEADER ? preferredY : hovered.y + 68;
         return (
           <g className="layer-hover-card" pointerEvents="none">
-            <rect
-              x={px}
-              y={py}
-              width={popupWidth}
-              height={popupHeight}
-              rx="9"
-              fill="#020617"
-              stroke="#60a5fa"
-              strokeWidth="1.5"
-              opacity="0.98"
-            />
-            <text x={px + 12} y={py + 20} fill="#94a3b8" fontSize="9">
-              Position {hovered.position}
-            </text>
-            <text x={px + 12} y={py + 39} fill="#f8fafc" fontSize="14" fontWeight="700">
-              {shorten(hovered.label.title, 30)}
-            </text>
+            <rect x={px} y={py} width={popupWidth} height={popupHeight} rx="9" fill="#020617" stroke="#60a5fa" strokeWidth="1.5" opacity="0.98" />
+            <text x={px + 12} y={py + 20} fill="#94a3b8" fontSize="9">Position {hovered.position}</text>
+            <text x={px + 12} y={py + 39} fill="#f8fafc" fontSize="14" fontWeight="700">{shorten(hovered.label.title, 30)}</text>
             {hovered.label.subtitle && (
-              <text x={px + 12} y={py + 57} fill="#93c5fd" fontSize="11">
-                {shorten(hovered.label.subtitle, 38)}
-              </text>
+              <text x={px + 12} y={py + 57} fill="#93c5fd" fontSize="11">{shorten(hovered.label.subtitle, 38)}</text>
             )}
           </g>
         );
@@ -330,11 +317,28 @@ export default function LayerViewer({
   const [activeLayer, setActiveLayer] = useState(0);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [editorBusy, setEditorBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedPosition, setSelectedPosition] = useState<number | null>(null);
+  const [draftBinding, setDraftBinding] = useState<BehaviorBinding | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const currentSvgRef = useRef<SVGSVGElement | null>(null);
 
   const layer = keymap?.layers[activeLayer] ?? null;
   const behaviorMapReady = useMemo(() => behaviorOptions !== null, [behaviorOptions]);
+  const selectedLabel = useMemo(
+    () => behaviorLabel(draftBinding ?? undefined, behaviorOptions),
+    [draftBinding, behaviorOptions],
+  );
+
+  function selectPosition(position: number) {
+    if (!layer) return;
+    const binding = layer.bindings[position];
+    if (!binding) return;
+    setSelectedPosition(position);
+    setDraftBinding({ ...binding });
+    onDebug('Layer editor selected key', { layer: activeLayer, position, behaviorId: binding.behaviorId });
+  }
 
   async function loadKeymap() {
     setLoading(true);
@@ -346,6 +350,8 @@ export default function LayerViewer({
       if (!next) throw new Error('Firmware returned no keymap.');
       setKeymap(next);
       setActiveLayer((current) => Math.min(current, Math.max(0, next.layers.length - 1)));
+      setSelectedPosition(null);
+      setDraftBinding(null);
       onDebug('Keymap loaded', {
         layers: next.layers.length,
         availableLayers: next.availableLayers,
@@ -363,6 +369,102 @@ export default function LayerViewer({
   useEffect(() => {
     void loadKeymap();
   }, [connection]);
+
+  useEffect(() => {
+    setSelectedPosition(null);
+    setDraftBinding(null);
+  }, [activeLayer]);
+
+  function changeBehavior(behaviorId: number) {
+    if (!draftBinding) return;
+    setDraftBinding({ behaviorId, param1: 0, param2: 0 });
+  }
+
+  async function applyBindingChange() {
+    if (!keymap || !layer || selectedPosition === null || !draftBinding) return;
+    setEditorBusy(true);
+    setError(null);
+    try {
+      onDebug('RPC -> keymap.setLayerBinding', {
+        layerId: layer.id,
+        layerIndex: activeLayer,
+        keyPosition: selectedPosition,
+        binding: draftBinding,
+      });
+      const response = await call_rpc(connection, {
+        keymap: {
+          setLayerBinding: {
+            layerId: layer.id,
+            keyPosition: selectedPosition,
+            binding: draftBinding,
+          },
+        },
+      });
+      const status = response.keymap?.setLayerBinding;
+      if (status !== 0) throw new Error(`setLayerBinding failed (${status ?? 'no response'}).`);
+
+      setKeymap((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          layers: current.layers.map((item, index) => {
+            if (index !== activeLayer) return item;
+            const bindings = [...item.bindings];
+            bindings[selectedPosition] = { ...draftBinding };
+            return { ...item, bindings };
+          }),
+        };
+      });
+      setHasUnsavedChanges(true);
+      onDebug('Layer binding staged', { layer: activeLayer, position: selectedPosition, behaviorId: draftBinding.behaviorId });
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setError(message);
+      onDebug('Layer binding update failed', message);
+    } finally {
+      setEditorBusy(false);
+    }
+  }
+
+  async function saveKeymapChanges() {
+    setEditorBusy(true);
+    setError(null);
+    try {
+      onDebug('RPC -> keymap.saveChanges');
+      const response = await call_rpc(connection, { keymap: { saveChanges: true } });
+      const result = response.keymap?.saveChanges;
+      if (!result?.ok) throw new Error(`saveChanges failed (${result?.err ?? 'unknown'}).`);
+      setHasUnsavedChanges(false);
+      onDebug('Keymap changes saved');
+      await loadKeymap();
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setError(message);
+      onDebug('Keymap save failed', message);
+    } finally {
+      setEditorBusy(false);
+    }
+  }
+
+  async function discardKeymapChanges() {
+    setEditorBusy(true);
+    setError(null);
+    try {
+      onDebug('RPC -> keymap.discardChanges');
+      const response = await call_rpc(connection, { keymap: { discardChanges: true } });
+      const result = response.keymap?.discardChanges;
+      if (!result?.ok) throw new Error(`discardChanges failed (${result?.err ?? 'unknown'}).`);
+      setHasUnsavedChanges(false);
+      onDebug('Keymap changes discarded');
+      await loadKeymap();
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setError(message);
+      onDebug('Keymap discard failed', message);
+    } finally {
+      setEditorBusy(false);
+    }
+  }
 
   async function exportCurrentPng() {
     if (!layer || !currentSvgRef.current) return;
@@ -387,14 +489,7 @@ export default function LayerViewer({
       const { createRoot } = await import('react-dom/client');
       const root = createRoot(host);
       await new Promise<void>((resolve) => {
-        root.render(
-          <LayerSvg
-            layer={targetLayer}
-            layerIndex={index}
-            keys={physicalKeys}
-            behaviorOptions={behaviorOptions}
-          />,
-        );
+        root.render(<LayerSvg layer={targetLayer} layerIndex={index} keys={physicalKeys} behaviorOptions={behaviorOptions} />);
         requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
       });
       const svg = host.querySelector('svg');
@@ -445,11 +540,8 @@ export default function LayerViewer({
         image.src = png;
         await loaded;
         const landscape = image.width >= image.height;
-        if (!pdf) {
-          pdf = new jsPDF({ orientation: landscape ? 'landscape' : 'portrait', unit: 'pt', format: 'a4' });
-        } else {
-          pdf.addPage('a4', landscape ? 'landscape' : 'portrait');
-        }
+        if (!pdf) pdf = new jsPDF({ orientation: landscape ? 'landscape' : 'portrait', unit: 'pt', format: 'a4' });
+        else pdf.addPage('a4', landscape ? 'landscape' : 'portrait');
         const pageW = pdf.internal.pageSize.getWidth();
         const pageH = pdf.internal.pageSize.getHeight();
         const margin = 28;
@@ -469,30 +561,25 @@ export default function LayerViewer({
     }
   }
 
-  if (loading) {
-    return <div className="panel empty"><div><h3>Reading keymap…</h3><p>Loading layers and bindings from firmware.</p></div></div>;
-  }
-
-  if (error && !keymap) {
-    return <div className="panel empty"><div><h3>Layer Viewer unavailable</h3><p>{error}</p><button className="button" onClick={loadKeymap}>Retry</button></div></div>;
-  }
-
-  if (!keymap || !physicalKeys?.length || !layer) {
-    return <div className="panel empty"><div><h3>No layer data</h3><p>Keymap or physical layout was not returned by this firmware.</p></div></div>;
-  }
+  if (loading) return <div className="panel empty"><div><h3>Reading keymap…</h3><p>Loading layers and bindings from firmware.</p></div></div>;
+  if (error && !keymap) return <div className="panel empty"><div><h3>Layer Viewer unavailable</h3><p>{error}</p><button className="button" onClick={loadKeymap}>Retry</button></div></div>;
+  if (!keymap || !physicalKeys?.length || !layer) return <div className="panel empty"><div><h3>No layer data</h3><p>Keymap or physical layout was not returned by this firmware.</p></div></div>;
 
   return (
     <div className="layer-viewer">
       <section className="panel layer-toolbar">
         <div>
-          <h3>Layer Viewer</h3>
-          <p>{keymap.layers.length} layer(s) · {physicalKeys.length} physical key(s) · read only</p>
+          <h3>Layer Viewer / Editor</h3>
+          <p>{keymap.layers.length} layer(s) · {physicalKeys.length} physical key(s) · click a key to edit</p>
         </div>
         <div className="layer-export-actions">
-          <button className="button secondary" onClick={loadKeymap} disabled={loading || exporting}>Refresh</button>
-          <button className="button secondary" onClick={exportCurrentPng} disabled={exporting}>PNG</button>
-          <button className="button secondary" onClick={exportAllPng} disabled={exporting}>All PNG</button>
-          <button className="button" onClick={exportPdf} disabled={exporting}>PDF</button>
+          {hasUnsavedChanges && <span className="layer-unsaved-badge">Unsaved changes</span>}
+          <button className="button secondary" onClick={loadKeymap} disabled={loading || exporting || editorBusy}>Refresh</button>
+          <button className="button secondary" onClick={exportCurrentPng} disabled={exporting || editorBusy}>PNG</button>
+          <button className="button secondary" onClick={exportAllPng} disabled={exporting || editorBusy}>All PNG</button>
+          <button className="button secondary" onClick={exportPdf} disabled={exporting || editorBusy}>PDF</button>
+          <button className="button secondary" onClick={discardKeymapChanges} disabled={editorBusy || !hasUnsavedChanges}>Discard</button>
+          <button className="button" onClick={saveKeymapChanges} disabled={editorBusy || !hasUnsavedChanges}>Save to firmware</button>
         </div>
       </section>
 
@@ -501,28 +588,87 @@ export default function LayerViewer({
 
       <div className="layer-tabs" role="tablist">
         {keymap.layers.map((item, index) => (
-          <button
-            key={item.id}
-            className={`layer-tab ${activeLayer === index ? 'active' : ''}`}
-            onClick={() => setActiveLayer(index)}
-          >
-            <strong>{index}</strong>
-            <span>{item.name || `Layer ${index}`}</span>
+          <button key={item.id} className={`layer-tab ${activeLayer === index ? 'active' : ''}`} onClick={() => setActiveLayer(index)}>
+            <strong>{index}</strong><span>{item.name || `Layer ${index}`}</span>
           </button>
         ))}
       </div>
 
-      <section className="panel layer-canvas-panel">
-        <div className="layer-canvas-scroll">
-          <LayerSvg
-            layer={layer}
-            layerIndex={activeLayer}
-            keys={physicalKeys}
-            behaviorOptions={behaviorOptions}
-            svgRef={currentSvgRef}
-          />
-        </div>
-      </section>
+      <div className="layer-editor-layout">
+        <section className="panel layer-canvas-panel">
+          <div className="layer-canvas-scroll">
+            <LayerSvg
+              layer={layer}
+              layerIndex={activeLayer}
+              keys={physicalKeys}
+              behaviorOptions={behaviorOptions}
+              svgRef={currentSvgRef}
+              selectedPosition={selectedPosition}
+              onSelectPosition={selectPosition}
+            />
+          </div>
+        </section>
+
+        <aside className="panel layer-key-editor">
+          {selectedPosition === null || !draftBinding ? (
+            <div className="layer-editor-empty">
+              <h3>Select a key</h3>
+              <p>Click a key in the layout to edit its behavior.</p>
+            </div>
+          ) : (
+            <>
+              <div className="layer-key-editor-heading">
+                <div>
+                  <span>Layer {activeLayer} · Position {selectedPosition}</span>
+                  <h3>{selectedLabel.title}</h3>
+                  <p>{selectedLabel.subtitle || 'Current binding'}</p>
+                </div>
+              </div>
+
+              <label>
+                Behavior
+                {behaviorOptions === null ? (
+                  <div className="select-placeholder">Loading behaviors…</div>
+                ) : behaviorOptions.length ? (
+                  <select value={draftBinding.behaviorId} onChange={(event) => changeBehavior(Number(event.target.value))}>
+                    {!behaviorOptions.some((option) => option.id === draftBinding.behaviorId) && (
+                      <option value={draftBinding.behaviorId}>Unknown behavior (#{draftBinding.behaviorId})</option>
+                    )}
+                    {behaviorOptions.map((option) => (
+                      <option key={option.id} value={option.id}>{option.displayName} (#{option.id})</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input type="number" value={draftBinding.behaviorId} onChange={(event) => changeBehavior(Number(event.target.value))} />
+                )}
+              </label>
+
+              <label>
+                Param 1
+                <input type="number" value={draftBinding.param1} onChange={(event) => setDraftBinding({ ...draftBinding, param1: Number(event.target.value) })} />
+                <small>{describeParam(behaviorOptions?.find((item) => item.id === draftBinding.behaviorId), 1, draftBinding.param1).text || '—'}</small>
+              </label>
+
+              <label>
+                Param 2
+                <input type="number" value={draftBinding.param2} onChange={(event) => setDraftBinding({ ...draftBinding, param2: Number(event.target.value) })} />
+                <small>{describeParam(behaviorOptions?.find((item) => item.id === draftBinding.behaviorId), 2, draftBinding.param2).text || '—'}</small>
+              </label>
+
+              <div className="layer-editor-preview">
+                <span>Preview</span>
+                <strong>{selectedLabel.title}</strong>
+                {selectedLabel.subtitle && <small>{selectedLabel.subtitle}</small>}
+              </div>
+
+              <button className="button" onClick={applyBindingChange} disabled={editorBusy}>
+                {editorBusy ? 'Applying…' : 'Apply change'}
+              </button>
+              <p className="layer-editor-hint">Apply stages the change. Use “Save to firmware” above to persist it, or “Discard” to revert staged edits.</p>
+            </>
+          )}
+        </aside>
+      </div>
     </div>
   );
 }
