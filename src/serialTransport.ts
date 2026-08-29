@@ -1,3 +1,5 @@
+import { clearConnectedDevice, setConnectedDevice } from './deviceIdentity';
+
 type RpcTransport = {
   label: string;
   abortController: AbortController;
@@ -41,6 +43,7 @@ export async function connectSerial(): Promise<ClosableRpcTransport> {
 
   const info = port.getInfo();
   const label = `${info.usbVendorId?.toLocaleString() || ''}:${info.usbProductId?.toLocaleString() || ''}`;
+  setConnectedDevice(label);
 
   let closePromise: Promise<void> | null = null;
 
@@ -78,6 +81,7 @@ export async function connectSerial(): Promise<ClosableRpcTransport> {
           if (!(port.readable?.locked ?? false) && !(port.writable?.locked ?? false)) {
             try {
               await port.close();
+              clearConnectedDevice();
               return;
             } catch {
               // Continue retrying below.
@@ -87,6 +91,7 @@ export async function connectSerial(): Promise<ClosableRpcTransport> {
         }
         throw error;
       }
+      clearConnectedDevice();
     })();
 
     return closePromise;
@@ -103,6 +108,7 @@ export async function connectSerial(): Promise<ClosableRpcTransport> {
   );
 
   if (!port.readable || !port.writable) {
+    clearConnectedDevice();
     throw new Error('Serial port opened without readable/writable streams.');
   }
 
