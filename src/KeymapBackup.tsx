@@ -89,10 +89,10 @@ function PhysicalDiffMap({
               className={`backup-keymap-key ${changed ? 'changed' : 'same'}`}
               style={{ left, top, width: keyWidth, height: keyHeight }}
               onMouseEnter={() => setHovered({ position, current, imported, x: left + keyWidth / 2, y: top })}
-              title={changed ? `Position ${position}: changed` : `Position ${position}: unchanged`}
+              title={changed ? `Position ${position}: will change` : `Position ${position}: unchanged`}
             >
               <span>{position}</span>
-              {changed && <strong>Δ</strong>}
+              {changed && <strong>→</strong>}
             </button>
           );
         })}
@@ -103,8 +103,8 @@ function PhysicalDiffMap({
             style={{ left: Math.max(8, Math.min(width - 300, hovered.x - 145)), top: Math.max(8, hovered.y - 94) }}
           >
             <strong>Position {hovered.position}</strong>
-            <div><span>Current</span><code>{bindingText(hovered.current)}</code></div>
-            <div><span>Import</span><code>{bindingText(hovered.imported)}</code></div>
+            <div><span>Before</span><code>{bindingText(hovered.current)}</code></div>
+            <div><span>After</span><code>{bindingText(hovered.imported)}</code></div>
           </div>
         )}
       </div>
@@ -201,7 +201,7 @@ export default function KeymapBackup({
       });
       setPending(parsed);
       setPreviewLayer(0);
-      setMessage('Backup loaded. Review imported contents and differences before applying.');
+      setMessage('Backup loaded. Orange keys are the keys that will change if you apply this backup.');
       onDebug('Keymap backup selected', { exportedAt: parsed.exportedAt, layers: parsed.keymap.layers.length });
     } catch (error) {
       setPending(null);
@@ -336,13 +336,32 @@ export default function KeymapBackup({
             <div>
               <h3>Import preview</h3>
               <p>Exported {pending.exportedAt}</p>
-              <p>{pending.keymap.layers.length} layers · {diff.bindings} binding change(s) · {diff.names} layer name change(s)</p>
+              <p>{pending.keymap.layers.length} layers · {diff.bindings} key change(s) · {diff.names} layer name change(s)</p>
             </div>
             <div className="backup-actions">
               <button className="button secondary" onClick={() => setPending(null)} disabled={busy}>Cancel</button>
               <button className="button danger" onClick={applyImport} disabled={busy || (diff.bindings === 0 && diff.names === 0)}>
-                Apply to firmware
+                Apply imported keymap
               </button>
+            </div>
+          </section>
+
+          <section className="panel backup-diff-guide">
+            <div className="diff-flow-card before">
+              <small>BEFORE</small>
+              <strong>Current firmware</strong>
+              <span>The keymap that is in the keyboard now</span>
+            </div>
+            <div className="diff-flow-arrow">→</div>
+            <div className="diff-flow-card after">
+              <small>AFTER APPLY</small>
+              <strong>Imported backup</strong>
+              <span>The keymap that will be written</span>
+            </div>
+            <div className="diff-legend-box">
+              <span><i className="diff-swatch changed" /> Orange = will change</span>
+              <span><i className="diff-swatch same" /> Gray = unchanged</span>
+              <span>Hover a key to see Before → After</span>
             </div>
           </section>
 
@@ -363,22 +382,23 @@ export default function KeymapBackup({
           <section className="panel backup-diff-panel">
             <div className="backup-diff-header">
               <div>
-                <h3>Layer {previewLayer} comparison</h3>
+                <h3>Layer {previewLayer}: what will change</h3>
                 <p>
-                  Current: <strong>{liveLayer?.name || `Layer ${previewLayer}`}</strong>
+                  <strong>{liveLayer?.name || `Layer ${previewLayer}`}</strong>
                   {' → '}
-                  Import: <strong>{importLayer?.name || `Layer ${previewLayer}`}</strong>
+                  <strong>{importLayer?.name || `Layer ${previewLayer}`}</strong>
+                  {' · '}{diff.byLayer[previewLayer] ?? 0} key change(s)
                 </p>
               </div>
-              <label className="backup-filter">
-                <input type="checkbox" checked={changedOnly} onChange={(event) => setChangedOnly(event.target.checked)} />
-                Changed only
-              </label>
+              <div className="backup-view-toggle" role="group" aria-label="Diff rows">
+                <button type="button" className={changedOnly ? 'active' : ''} onClick={() => setChangedOnly(true)}>Changes only</button>
+                <button type="button" className={!changedOnly ? 'active' : ''} onClick={() => setChangedOnly(false)}>All keys</button>
+              </div>
             </div>
 
             {liveLayer && importLayer && liveLayer.name !== importLayer.name && (
               <div className="layer-name-diff">
-                <span>Layer name</span>
+                <span>Layer name will change</span>
                 <code>{liveLayer.name || '(empty)'}</code>
                 <span>→</span>
                 <code>{importLayer.name || '(empty)'}</code>
@@ -388,9 +408,10 @@ export default function KeymapBackup({
             {liveLayer && importLayer && resolvedPhysicalKeys?.length ? (
               <div className="backup-physical-diff">
                 <div className="backup-physical-diff-heading">
-                  <strong>Physical layout diff</strong>
-                  <span><i className="diff-swatch changed" /> Changed</span>
-                  <span><i className="diff-swatch same" /> Same</span>
+                  <strong>Keyboard layout</strong>
+                  <span><i className="diff-swatch changed" /> Will change</span>
+                  <span><i className="diff-swatch same" /> Unchanged</span>
+                  <span>Hover a key for Before → After</span>
                 </div>
                 <PhysicalDiffMap
                   keys={resolvedPhysicalKeys}
@@ -405,7 +426,7 @@ export default function KeymapBackup({
             <div className="backup-diff-table-wrap">
               <table className="backup-diff-table">
                 <thead>
-                  <tr><th>Position</th><th>Current firmware</th><th>Imported backup</th><th>Status</th></tr>
+                  <tr><th>Position</th><th>Before: current firmware</th><th>After: imported backup</th><th>Result</th></tr>
                 </thead>
                 <tbody>
                   {previewRows.map((row) => (
@@ -413,13 +434,13 @@ export default function KeymapBackup({
                       <td>#{row.position}</td>
                       <td><code>{bindingText(row.current)}</code></td>
                       <td><code>{bindingText(row.imported)}</code></td>
-                      <td>{row.changed ? 'Changed' : 'Same'}</td>
+                      <td>{row.changed ? <strong className="diff-result-change">→ Will change</strong> : 'Unchanged'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
               {previewRows.length === 0 && (
-                <div className="backup-no-diff">No binding changes in this layer.</div>
+                <div className="backup-no-diff">No key changes in this layer.</div>
               )}
             </div>
           </section>
