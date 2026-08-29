@@ -88,13 +88,7 @@ function PhysicalDiffMap({
               type="button"
               className={`backup-keymap-key ${changed ? 'changed' : 'same'}`}
               style={{ left, top, width: keyWidth, height: keyHeight }}
-              onMouseEnter={() => setHovered({
-                position,
-                current,
-                imported,
-                x: left + keyWidth / 2,
-                y: top,
-              })}
+              onMouseEnter={() => setHovered({ position, current, imported, x: left + keyWidth / 2, y: top })}
               title={changed ? `Position ${position}: changed` : `Position ${position}: unchanged`}
             >
               <span>{position}</span>
@@ -124,7 +118,7 @@ export default function KeymapBackup({
   onDebug,
 }: {
   connection: RpcConnection;
-  physicalKeys: KeyPhysicalAttrs[] | null;
+  physicalKeys?: KeyPhysicalAttrs[] | null;
   onDebug: (event: string, detail?: unknown) => void;
 }) {
   const [current, setCurrent] = useState<Keymap | null>(null);
@@ -133,6 +127,7 @@ export default function KeymapBackup({
   const [message, setMessage] = useState('');
   const [previewLayer, setPreviewLayer] = useState(0);
   const [changedOnly, setChangedOnly] = useState(true);
+  const [resolvedPhysicalKeys, setResolvedPhysicalKeys] = useState<KeyPhysicalAttrs[] | null>(physicalKeys ?? null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   async function readKeymap() {
@@ -148,9 +143,27 @@ export default function KeymapBackup({
     return keymap;
   }
 
+  async function readPhysicalLayout() {
+    if (physicalKeys?.length) {
+      setResolvedPhysicalKeys(physicalKeys);
+      return physicalKeys;
+    }
+    onDebug('RPC -> keymap.getPhysicalLayouts (backup)');
+    const response = await call_rpc(connection, { keymap: { getPhysicalLayouts: true } });
+    const layouts = response.keymap?.getPhysicalLayouts;
+    if (!layouts) return null;
+    const keys = layouts.layouts[layouts.activeLayoutIndex]?.keys ?? null;
+    setResolvedPhysicalKeys(keys);
+    onDebug('Backup physical layout loaded', { activeLayoutIndex: layouts.activeLayoutIndex, keyCount: keys?.length ?? 0 });
+    return keys;
+  }
+
   useEffect(() => {
-    void readKeymap().catch((error) => setMessage(error instanceof Error ? error.message : String(error)));
-  }, [connection]);
+    void Promise.all([
+      readKeymap(),
+      readPhysicalLayout(),
+    ]).catch((error) => setMessage(error instanceof Error ? error.message : String(error)));
+  }, [connection, physicalKeys]);
 
   async function exportBackup() {
     setBusy(true);
@@ -302,7 +315,7 @@ export default function KeymapBackup({
           <p>Export the live firmware keymap to JSON, or compare and restore a matching backup.</p>
         </div>
         <div className="backup-actions">
-          <button className="button secondary" onClick={() => void readKeymap()} disabled={busy}>Refresh</button>
+          <button className="button secondary" onClick={() => void Promise.all([readKeymap(), readPhysicalLayout()])} disabled={busy}>Refresh</button>
           <button className="button" onClick={exportBackup} disabled={busy || !current}>Export JSON</button>
           <button className="button secondary" onClick={() => fileInputRef.current?.click()} disabled={busy}>Import JSON</button>
           <input ref={fileInputRef} type="file" accept="application/json,.json" hidden onChange={chooseImport} />
@@ -372,7 +385,7 @@ export default function KeymapBackup({
               </div>
             )}
 
-            {liveLayer && importLayer && physicalKeys?.length ? (
+            {liveLayer && importLayer && resolvedPhysicalKeys?.length ? (
               <div className="backup-physical-diff">
                 <div className="backup-physical-diff-heading">
                   <strong>Physical layout diff</strong>
@@ -380,7 +393,7 @@ export default function KeymapBackup({
                   <span><i className="diff-swatch same" /> Same</span>
                 </div>
                 <PhysicalDiffMap
-                  keys={physicalKeys}
+                  keys={resolvedPhysicalKeys}
                   currentBindings={liveLayer.bindings}
                   importedBindings={importLayer.bindings}
                 />
