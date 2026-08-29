@@ -9,6 +9,7 @@ import {
   connectSerial,
   type ClosableRpcTransport,
 } from './serialTransport';
+import LayerViewer from './LayerViewer';
 import {
   decodeGetComboResponse,
   decodeGlobalSettingsResponse,
@@ -31,6 +32,8 @@ type CustomSubsystem = {
   index: number;
   identifier: string;
 };
+
+type ActiveTool = 'runtime-combo' | 'layer-viewer';
 
 const sourceLabel = (source: number) => {
   if (source === 1) return 'Default';
@@ -103,9 +106,9 @@ export default function App() {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [draft, setDraft] = useState<RuntimeComboRecord | null>(null);
   const [physicalKeys, setPhysicalKeys] = useState<KeyPhysicalAttrs[] | null>(null);
-  const [debugLines, setDebugLines] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('Chrome / Edge Web Serial ready');
+  const [activeTool, setActiveTool] = useState<ActiveTool>('runtime-combo');
   const rpcAbortRef = useRef<AbortController | null>(null);
 
   const behaviorOptions = useBehaviorOptions(connection);
@@ -125,9 +128,7 @@ export default function App() {
     const suffix = detail === undefined
       ? ''
       : ` ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`;
-    const line = `${timestamp} ${event}${suffix}`;
-    console.info(`[MyZMKStudio] ${line}`);
-    setDebugLines((current) => [...current.slice(-199), line]);
+    console.info(`[MyZMKStudio] ${timestamp} ${event}${suffix}`);
   }
 
   async function callRuntimeCombo(
@@ -270,7 +271,6 @@ export default function App() {
   async function connectUsb() {
     setBusy(true);
     setComboError(null);
-    setDebugLines([]);
     setMessage('Opening USB serial connection…');
     let nextTransport: ClosableRpcTransport | null = null;
     let rpcAbort: AbortController | null = null;
@@ -424,15 +424,10 @@ export default function App() {
       const text = error instanceof Error ? error.message : String(error);
       debug('Save flow failed', text);
       setComboError(text);
-      setMessage('Save failed. See Debug Log.');
+      setMessage('Save failed. See Debug Console.');
     } finally {
       setBusy(false);
     }
-  }
-
-  async function copyDebugLog() {
-    await navigator.clipboard.writeText(debugLines.join('\n'));
-    setMessage('Debug Log copied to clipboard.');
   }
 
   async function disconnectUsb() {
@@ -455,17 +450,17 @@ export default function App() {
       try {
         await currentConnection?.request_writable.close();
       } catch {
-        // Expected when AbortSignal already closed the pipeline.
+        // Expected after abort.
       }
       try {
         await currentConnection?.request_response_readable.cancel();
       } catch {
-        // Expected when AbortSignal already closed the pipeline.
+        // Expected after abort.
       }
       try {
         await currentConnection?.notification_readable.cancel();
       } catch {
-        // Expected when AbortSignal already closed the pipeline.
+        // Expected after abort.
       }
       debug('RPC pipelines stopped');
 
@@ -490,12 +485,14 @@ export default function App() {
     }
   }
 
+  const title = activeTool === 'layer-viewer' ? 'Layer Viewer' : 'Runtime Combo';
+
   return (
     <div className="app-shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">ZMK configuration UI</div>
-          <h1>My ZMK Studio</h1>
+          <div className="eyebrow">ZMK firmware inspector</div>
+          <h1>My ZMK Studio <small className="version-badge">v0.4</small></h1>
         </div>
         <button
           className={connected ? 'button secondary' : 'button'}
@@ -516,22 +513,36 @@ export default function App() {
               <small>{message}</small>
             </div>
           </div>
-          <nav className="nav-list">
-            <button className="nav-item active">Runtime Combo</button>
+
+          <div className="section-title tool-title">Tools</div>
+          <nav className="nav-list tool-nav">
+            <button
+              className={`nav-item ${activeTool === 'runtime-combo' ? 'active' : ''}`}
+              onClick={() => setActiveTool('runtime-combo')}
+            >
+              Runtime Combo
+            </button>
+            <button
+              className={`nav-item ${activeTool === 'layer-viewer' ? 'active' : ''}`}
+              onClick={() => setActiveTool('layer-viewer')}
+            >
+              Layer Viewer
+            </button>
+            <button className="nav-item" disabled>Custom Settings</button>
+            <button className="nav-item" disabled>BLE Management</button>
             <button className="nav-item" disabled>PMW3610</button>
             <button className="nav-item" disabled>PAW3222</button>
-            <button className="nav-item" disabled>BLE Management</button>
           </nav>
         </aside>
 
         <section className="content">
           <div className="content-header">
             <div>
-              <div className="eyebrow">Runtime configuration</div>
-              <h2>{connected ? 'Runtime Combo' : 'Connect your keyboard'}</h2>
-              <p>Direct DYA-compatible Custom Studio RPC.</p>
+              <div className="eyebrow">Read / inspect / export</div>
+              <h2>{connected ? title : 'Connect your keyboard'}</h2>
+              <p>{activeTool === 'layer-viewer' ? 'Read-only firmware keymap viewer with PNG and PDF export.' : 'Direct DYA-compatible Runtime Combo RPC.'}</p>
             </div>
-            {connected && runtimeCombo && (
+            {connected && activeTool === 'runtime-combo' && runtimeCombo && (
               <button className="button" onClick={refreshCombos} disabled={busy}>Refresh</button>
             )}
           </div>
@@ -539,10 +550,17 @@ export default function App() {
           {!connected ? (
             <div className="panel empty">
               <div>
-                <h3>USB test</h3>
+                <h3>USB connection</h3>
                 <p>Connect a ZMK Studio enabled keyboard with Chrome or Edge.</p>
               </div>
             </div>
+          ) : activeTool === 'layer-viewer' && connection ? (
+            <LayerViewer
+              connection={connection}
+              physicalKeys={physicalKeys}
+              behaviorOptions={behaviorOptions}
+              onDebug={debug}
+            />
           ) : (
             <>
               <div className="status-strip panel">
@@ -553,158 +571,151 @@ export default function App() {
 
               {comboError && <div className="notice">{comboError}</div>}
 
-              <div className="runtime-grid">
-                <section className="panel combo-panel">
-                  <div className="panel-heading">
-                    <div>
-                      <h3>Combos from firmware</h3>
-                      <p>{combos.length} combo(s). Click one to edit.</p>
-                    </div>
-                  </div>
-                  <div className="combo-scroll-box">
-                    {combos.length ? combos.map((combo) => (
-                      <button
-                        className={`combo-row ${selectedIndex === combo.index ? 'selected' : ''}`}
-                        key={combo.index}
-                        onClick={() => selectCombo(combo)}
-                      >
-                        <span>
-                          <strong>#{combo.index} {combo.name || 'Unnamed combo'}</strong>
-                          <small>{combo.keyPositions.join(' + ') || 'No positions'} · behavior #{combo.behaviorId}</small>
-                        </span>
-                        <span className={combo.enabled ? 'pill' : 'pill muted'}>
-                          {sourceLabel(combo.source)} / {combo.enabled ? 'On' : 'Off'}
-                        </span>
-                      </button>
-                    )) : <p>No Runtime Combos were returned.</p>}
-                  </div>
-                </section>
-
-                <section className="panel editor">
-                  {draft ? (
-                    <>
-                      <div className="editor-title">
-                        <div>
-                          <h3>Edit Combo #{draft.index}</h3>
-                          <p>Select keys directly from the keyboard layout.</p>
-                        </div>
-                        <span className="selection-count">{draft.keyPositions.length} keys selected</span>
-                      </div>
-
-                      <label>
-                        Name
-                        <input
-                          type="text"
-                          value={draft.name}
-                          onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-                        />
-                      </label>
-
+              {!runtimeCombo ? (
+                <div className="panel empty">
+                  <div><h3>Runtime Combo unavailable</h3><p>This firmware does not advertise cormoran__runtime_combo.</p></div>
+                </div>
+              ) : (
+                <div className="runtime-grid">
+                  <section className="panel combo-panel">
+                    <div className="panel-heading">
                       <div>
-                        <div className="field-label">Key positions</div>
-                        <PositionPicker
-                          keys={physicalKeys}
-                          selected={draft.keyPositions}
-                          onChange={(keyPositions) => setDraft({ ...draft, keyPositions })}
-                        />
-                        <p>Selected: {draft.keyPositions.join(', ') || 'none'}</p>
+                        <h3>Combos from firmware</h3>
+                        <p>{combos.length} combo(s). Click one to edit.</p>
                       </div>
+                    </div>
+                    <div className="combo-scroll-box">
+                      {combos.length ? combos.map((combo) => (
+                        <button
+                          className={`combo-row ${selectedIndex === combo.index ? 'selected' : ''}`}
+                          key={combo.index}
+                          onClick={() => selectCombo(combo)}
+                        >
+                          <span>
+                            <strong>#{combo.index} {combo.name || 'Unnamed combo'}</strong>
+                            <small>{combo.keyPositions.join(' + ') || 'No positions'} · behavior #{combo.behaviorId}</small>
+                          </span>
+                          <span className={combo.enabled ? 'pill' : 'pill muted'}>
+                            {sourceLabel(combo.source)} / {combo.enabled ? 'On' : 'Off'}
+                          </span>
+                        </button>
+                      )) : <p>No Runtime Combos were returned.</p>}
+                    </div>
+                  </section>
 
-                      <div className="form-grid">
-                        <label className="behavior-field">
-                          Behavior
-                          {behaviorOptions === null ? (
-                            <div className="select-placeholder">Loading behaviors…</div>
-                          ) : behaviorOptions.length ? (
-                            <select
-                              value={draft.behaviorId}
-                              onChange={(event) => changeBehavior(Number(event.target.value))}
-                            >
-                              {!behaviorOptions.some((option) => option.id === draft.behaviorId) && (
-                                <option value={draft.behaviorId}>Unknown behavior (#{draft.behaviorId})</option>
-                              )}
-                              {behaviorOptions.map((option) => (
-                                <option key={option.id} value={option.id}>
-                                  {option.displayName} (#{option.id})
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
+                  <section className="panel editor">
+                    {draft ? (
+                      <>
+                        <div className="editor-title">
+                          <div>
+                            <h3>Edit Combo #{draft.index}</h3>
+                            <p>Select keys directly from the keyboard layout.</p>
+                          </div>
+                          <span className="selection-count">{draft.keyPositions.length} keys selected</span>
+                        </div>
+
+                        <label>
+                          Name
+                          <input
+                            type="text"
+                            value={draft.name}
+                            onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                          />
+                        </label>
+
+                        <div>
+                          <div className="field-label">Key positions</div>
+                          <PositionPicker
+                            keys={physicalKeys}
+                            selected={draft.keyPositions}
+                            onChange={(keyPositions) => setDraft({ ...draft, keyPositions })}
+                          />
+                          <p>Selected: {draft.keyPositions.join(', ') || 'none'}</p>
+                        </div>
+
+                        <div className="form-grid">
+                          <label className="behavior-field">
+                            Behavior
+                            {behaviorOptions === null ? (
+                              <div className="select-placeholder">Loading behaviors…</div>
+                            ) : behaviorOptions.length ? (
+                              <select
+                                value={draft.behaviorId}
+                                onChange={(event) => changeBehavior(Number(event.target.value))}
+                              >
+                                {!behaviorOptions.some((option) => option.id === draft.behaviorId) && (
+                                  <option value={draft.behaviorId}>Unknown behavior (#{draft.behaviorId})</option>
+                                )}
+                                {behaviorOptions.map((option) => (
+                                  <option key={option.id} value={option.id}>
+                                    {option.displayName} (#{option.id})
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                type="number"
+                                value={draft.behaviorId}
+                                onChange={(event) => changeBehavior(Number(event.target.value))}
+                              />
+                            )}
+                            <small>{selectedBehaviorName ? `Selected: ${selectedBehaviorName}` : `Behavior ID: ${draft.behaviorId}`}</small>
+                          </label>
+
+                          <label>
+                            Param 1
                             <input
                               type="number"
-                              value={draft.behaviorId}
-                              onChange={(event) => changeBehavior(Number(event.target.value))}
+                              value={draft.param1}
+                              onChange={(event) => setDraft({ ...draft, param1: Number(event.target.value) })}
                             />
-                          )}
-                          <small>{selectedBehaviorName ? `Selected: ${selectedBehaviorName}` : `Behavior ID: ${draft.behaviorId}`}</small>
-                        </label>
+                          </label>
+                          <label>
+                            Param 2
+                            <input
+                              type="number"
+                              value={draft.param2}
+                              onChange={(event) => setDraft({ ...draft, param2: Number(event.target.value) })}
+                            />
+                          </label>
+                          <label>
+                            Timeout ms
+                            <input
+                              type="number"
+                              value={draft.timeoutMs}
+                              onChange={(event) => setDraft({ ...draft, timeoutMs: Number(event.target.value) })}
+                            />
+                          </label>
+                          <label>
+                            Layer mask
+                            <input
+                              type="number"
+                              value={draft.layerMask}
+                              onChange={(event) => setDraft({ ...draft, layerMask: Number(event.target.value) })}
+                            />
+                          </label>
+                          <label className="toggle-row">
+                            <input
+                              type="checkbox"
+                              checked={draft.enabled}
+                              onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })}
+                            />
+                            Enabled
+                          </label>
+                        </div>
 
-                        <label>
-                          Param 1
-                          <input
-                            type="number"
-                            value={draft.param1}
-                            onChange={(event) => setDraft({ ...draft, param1: Number(event.target.value) })}
-                          />
-                        </label>
-                        <label>
-                          Param 2
-                          <input
-                            type="number"
-                            value={draft.param2}
-                            onChange={(event) => setDraft({ ...draft, param2: Number(event.target.value) })}
-                          />
-                        </label>
-                        <label>
-                          Timeout ms
-                          <input
-                            type="number"
-                            value={draft.timeoutMs}
-                            onChange={(event) => setDraft({ ...draft, timeoutMs: Number(event.target.value) })}
-                          />
-                        </label>
-                        <label>
-                          Layer mask
-                          <input
-                            type="number"
-                            value={draft.layerMask}
-                            onChange={(event) => setDraft({ ...draft, layerMask: Number(event.target.value) })}
-                          />
-                        </label>
-                        <label className="toggle-row">
-                          <input
-                            type="checkbox"
-                            checked={draft.enabled}
-                            onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })}
-                          />
-                          Enabled
-                        </label>
-                      </div>
-
-                      <div className="actions">
-                        <button className="button" onClick={saveDraft} disabled={busy || draft.keyPositions.length < 2}>
-                          Save to firmware
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="empty">Select a combo from the list.</div>
-                  )}
-                </section>
-              </div>
-
-              <section className="panel debug-panel">
-                <div className="panel-heading">
-                  <div>
-                    <h3>Debug Log</h3>
-                    <p>RPC timings and payload trace for development.</p>
-                  </div>
-                  <button className="button secondary" onClick={copyDebugLog} disabled={!debugLines.length}>
-                    Copy Debug Log
-                  </button>
+                        <div className="actions">
+                          <button className="button" onClick={saveDraft} disabled={busy || draft.keyPositions.length < 2}>
+                            Save to firmware
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="empty">Select a combo from the list.</div>
+                    )}
+                  </section>
                 </div>
-                <pre>{debugLines.join('\n') || 'No debug events yet.'}</pre>
-              </section>
+              )}
             </>
           )}
         </section>
