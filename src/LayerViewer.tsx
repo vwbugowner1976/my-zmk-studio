@@ -453,7 +453,7 @@ export default function LayerViewer({
       onDebug('RPC -> keymap.discardChanges');
       const response = await call_rpc(connection, { keymap: { discardChanges: true } });
       const result = response.keymap?.discardChanges;
-      if (!result?.ok) throw new Error(`discardChanges failed (${result?.err ?? 'unknown'}).`);
+      if (result !== true) throw new Error('discardChanges failed.');
       setHasUnsavedChanges(false);
       onDebug('Keymap changes discarded');
       await loadKeymap();
