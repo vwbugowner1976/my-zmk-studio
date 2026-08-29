@@ -1,0 +1,50 @@
+.device-name-badge {
+  position: fixed;
+  top: 12px;
+  right: 132px;
+  z-index: 90;
+  display: grid;
+  grid-template-columns: auto minmax(130px, 220px) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, .96);
+  box-shadow: 0 8px 24px rgba(2, 6, 23, .28);
+  backdrop-filter: blur(8px);
+}
+.device-name-badge > span {
+  color: #93c5fd;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.device-name-badge input {
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: #f8fafc;
+  background: transparent;
+  font-weight: 800;
+}
+.device-name-badge input:hover,
+.device-name-badge input:focus {
+  border-color: #3b82f6;
+  background: #0b1220;
+  outline: none;
+}
+.device-name-badge small {
+  color: #64748b;
+  font-size: 9px;
+  white-space: nowrap;
+}
+@media (max-width: 850px) {
+  .device-name-badge {
+    position: static;
+    margin: 8px 12px 0;
+    grid-template-columns: auto 1fr;
+  }
+  .device-name-badge small { display: none; }
+}
