@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   call_rpc,
   create_rpc_connection,
   type RpcConnection,
 } from '@zmkfirmware/zmk-studio-ts-client';
 import type { KeyPhysicalAttrs } from '@zmkfirmware/zmk-studio-ts-client/keymap';
-import { connect as connectSerial } from '@zmkfirmware/zmk-studio-ts-client/transport/serial';
-import type { RpcTransport } from '@zmkfirmware/zmk-studio-ts-client/transport';
+import {
+  connectSerial,
+  type ClosableRpcTransport,
+} from './serialTransport';
 import {
   decodeGetComboResponse,
   decodeGlobalSettingsResponse,
@@ -93,7 +95,7 @@ function PositionPicker({
 }
 
 export default function App() {
-  const [transport, setTransport] = useState<RpcTransport | null>(null);
+  const [transport, setTransport] = useState<ClosableRpcTransport | null>(null);
   const [connection, setConnection] = useState<RpcConnection | null>(null);
   const [subsystems, setSubsystems] = useState<CustomSubsystem[]>([]);
   const [combos, setCombos] = useState<RuntimeComboRecord[]>([]);
@@ -104,6 +106,7 @@ export default function App() {
   const [debugLines, setDebugLines] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('Chrome / Edge Web Serial ready');
+  const rpcAbortRef = useRef<AbortController | null>(null);
 
   const behaviorOptions = useBehaviorOptions(connection);
   const serialSupported = typeof navigator !== 'undefined' && 'serial' in navigator;
@@ -269,11 +272,18 @@ export default function App() {
     setComboError(null);
     setDebugLines([]);
     setMessage('Opening USB serial connection…');
+    let nextTransport: ClosableRpcTransport | null = null;
+    let rpcAbort: AbortController | null = null;
+
     try {
       debug('Connect USB requested');
-      const nextTransport = await connectSerial();
+      nextTransport = await connectSerial();
       debug('Serial transport open', { label: nextTransport.label });
-      const nextConnection = create_rpc_connection(nextTransport);
+
+      rpcAbort = new AbortController();
+      rpcAbortRef.current = rpcAbort;
+      const nextConnection = create_rpc_connection(nextTransport, { signal: rpcAbort.signal });
+      debug('RPC pipelines started with dedicated AbortSignal');
 
       const [subsystemResponse, keys] = await Promise.all([
         call_rpc(nextConnection, { custom: { listCustomSubsystems: {} } }),
@@ -319,6 +329,19 @@ export default function App() {
       const text = error instanceof Error ? error.message : String(error);
       debug('Connection failed', text);
       setMessage(`Connection / RPC failed: ${text}`);
+
+      if (rpcAbort && !rpcAbort.signal.aborted) {
+        rpcAbort.abort('Connection setup failed');
+      }
+      rpcAbortRef.current = null;
+      if (nextTransport) {
+        try {
+          await nextTransport.close();
+          debug('Serial port released after connection failure');
+        } catch (closeError) {
+          debug('Serial close after connection failure failed', closeError instanceof Error ? closeError.message : String(closeError));
+        }
+      }
     } finally {
       setBusy(false);
     }
@@ -412,18 +435,59 @@ export default function App() {
     setMessage('Debug Log copied to clipboard.');
   }
 
-  function disconnectUsb() {
-    debug('Disconnect');
-    transport?.abortController.abort('Disconnected by user');
-    setTransport(null);
-    setConnection(null);
-    setSubsystems([]);
-    setCombos([]);
-    setPhysicalKeys(null);
-    setComboError(null);
-    setSelectedIndex(null);
-    setDraft(null);
-    setMessage('Disconnected');
+  async function disconnectUsb() {
+    if (!transport) return;
+    setBusy(true);
+    setMessage('Disconnecting and releasing serial port…');
+    debug('Disconnect requested');
+
+    const currentTransport = transport;
+    const currentConnection = connection;
+    const rpcAbort = rpcAbortRef.current;
+
+    try {
+      debug('RPC pipelines stopping');
+      if (rpcAbort && !rpcAbort.signal.aborted) {
+        rpcAbort.abort('Disconnected by user');
+      }
+      rpcAbortRef.current = null;
+
+      try {
+        await currentConnection?.request_writable.close();
+      } catch {
+        // Expected when AbortSignal already closed the pipeline.
+      }
+      try {
+        await currentConnection?.request_response_readable.cancel();
+      } catch {
+        // Expected when AbortSignal already closed the pipeline.
+      }
+      try {
+        await currentConnection?.notification_readable.cancel();
+      } catch {
+        // Expected when AbortSignal already closed the pipeline.
+      }
+      debug('RPC pipelines stopped');
+
+      debug('Serial transport closing');
+      await currentTransport.close();
+      debug('Serial port released');
+      setMessage('Disconnected. Serial port released for another Studio.');
+    } catch (error) {
+      const text = error instanceof Error ? error.message : String(error);
+      debug('Disconnect cleanup failed', text);
+      setMessage(`Disconnected with cleanup warning: ${text}`);
+    } finally {
+      setTransport(null);
+      setConnection(null);
+      setSubsystems([]);
+      setCombos([]);
+      setPhysicalKeys(null);
+      setComboError(null);
+      setSelectedIndex(null);
+      setDraft(null);
+      setBusy(false);
+    }
   }
 
   return (
