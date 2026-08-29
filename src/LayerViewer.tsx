@@ -9,6 +9,7 @@ import type {
 } from '@zmkfirmware/zmk-studio-ts-client/keymap';
 import { jsPDF } from 'jspdf';
 import type { BehaviorOption } from './useStudioCore';
+import KeyPicker from './KeyPicker';
 
 const UNIT_PX = 58;
 const PADDING = 28;
@@ -320,24 +321,25 @@ export default function LayerViewer({
   const [editorBusy, setEditorBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedPosition, setSelectedPosition] = useState<number | null>(null);
-  const [draftBinding, setDraftBinding] = useState<BehaviorBinding | null>(null);
+  const [selectedBinding, setSelectedBinding] = useState<BehaviorBinding | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const currentSvgRef = useRef<SVGSVGElement | null>(null);
 
   const layer = keymap?.layers[activeLayer] ?? null;
   const behaviorMapReady = useMemo(() => behaviorOptions !== null, [behaviorOptions]);
-  const selectedLabel = useMemo(
-    () => behaviorLabel(draftBinding ?? undefined, behaviorOptions),
-    [draftBinding, behaviorOptions],
-  );
 
   function selectPosition(position: number) {
-    if (!layer) return;
+    if (!layer || editorBusy) return;
     const binding = layer.bindings[position];
     if (!binding) return;
     setSelectedPosition(position);
-    setDraftBinding({ ...binding });
+    setSelectedBinding({ ...binding });
     onDebug('Layer editor selected key', { layer: activeLayer, position, behaviorId: binding.behaviorId });
+  }
+
+  function closePicker() {
+    setSelectedPosition(null);
+    setSelectedBinding(null);
   }
 
   async function loadKeymap() {
@@ -350,8 +352,7 @@ export default function LayerViewer({
       if (!next) throw new Error('Firmware returned no keymap.');
       setKeymap(next);
       setActiveLayer((current) => Math.min(current, Math.max(0, next.layers.length - 1)));
-      setSelectedPosition(null);
-      setDraftBinding(null);
+      closePicker();
       onDebug('Keymap loaded', {
         layers: next.layers.length,
         availableLayers: next.availableLayers,
@@ -371,32 +372,27 @@ export default function LayerViewer({
   }, [connection]);
 
   useEffect(() => {
-    setSelectedPosition(null);
-    setDraftBinding(null);
+    closePicker();
   }, [activeLayer]);
 
-  function changeBehavior(behaviorId: number) {
-    if (!draftBinding) return;
-    setDraftBinding({ behaviorId, param1: 0, param2: 0 });
-  }
-
-  async function applyBindingChange() {
-    if (!keymap || !layer || selectedPosition === null || !draftBinding) return;
+  async function stageBinding(binding: BehaviorBinding) {
+    if (!keymap || !layer || selectedPosition === null) return;
+    const position = selectedPosition;
     setEditorBusy(true);
     setError(null);
     try {
       onDebug('RPC -> keymap.setLayerBinding', {
         layerId: layer.id,
         layerIndex: activeLayer,
-        keyPosition: selectedPosition,
-        binding: draftBinding,
+        keyPosition: position,
+        binding,
       });
       const response = await call_rpc(connection, {
         keymap: {
           setLayerBinding: {
             layerId: layer.id,
-            keyPosition: selectedPosition,
-            binding: draftBinding,
+            keyPosition: position,
+            binding,
           },
         },
       });
@@ -410,13 +406,14 @@ export default function LayerViewer({
           layers: current.layers.map((item, index) => {
             if (index !== activeLayer) return item;
             const bindings = [...item.bindings];
-            bindings[selectedPosition] = { ...draftBinding };
+            bindings[position] = { ...binding };
             return { ...item, bindings };
           }),
         };
       });
       setHasUnsavedChanges(true);
-      onDebug('Layer binding staged', { layer: activeLayer, position: selectedPosition, behaviorId: draftBinding.behaviorId });
+      closePicker();
+      onDebug('Layer binding staged', { layer: activeLayer, position, behaviorId: binding.behaviorId });
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       setError(message);
@@ -570,7 +567,7 @@ export default function LayerViewer({
       <section className="panel layer-toolbar">
         <div>
           <h3>Layer Viewer / Editor</h3>
-          <p>{keymap.layers.length} layer(s) · {physicalKeys.length} physical key(s) · click a key to edit</p>
+          <p>{keymap.layers.length} layer(s) · {physicalKeys.length} physical key(s) · select a key, then choose its new key below</p>
         </div>
         <div className="layer-export-actions">
           {hasUnsavedChanges && <span className="layer-unsaved-badge">Unsaved changes</span>}
@@ -584,7 +581,7 @@ export default function LayerViewer({
       </section>
 
       {error && <div className="notice">{error}</div>}
-      {!behaviorMapReady && <div className="notice">Behavior metadata is still loading; raw values will be used temporarily.</div>}
+      {!behaviorMapReady && <div className="notice">Behavior metadata is still loading; key choices will appear when it is ready.</div>}
 
       <div className="layer-tabs" role="tablist">
         {keymap.layers.map((item, index) => (
@@ -594,81 +591,44 @@ export default function LayerViewer({
         ))}
       </div>
 
-      <div className="layer-editor-layout">
-        <section className="panel layer-canvas-panel">
-          <div className="layer-canvas-scroll">
-            <LayerSvg
-              layer={layer}
-              layerIndex={activeLayer}
-              keys={physicalKeys}
-              behaviorOptions={behaviorOptions}
-              svgRef={currentSvgRef}
-              selectedPosition={selectedPosition}
-              onSelectPosition={selectPosition}
-            />
+      <section className="panel layer-canvas-panel">
+        <div className="layer-canvas-scroll">
+          <LayerSvg
+            layer={layer}
+            layerIndex={activeLayer}
+            keys={physicalKeys}
+            behaviorOptions={behaviorOptions}
+            svgRef={currentSvgRef}
+            selectedPosition={selectedPosition}
+            onSelectPosition={selectPosition}
+          />
+        </div>
+      </section>
+
+      {selectedPosition !== null && selectedBinding && (
+        <KeyPicker
+          key={`${activeLayer}:${selectedPosition}`}
+          position={selectedPosition}
+          currentBinding={selectedBinding}
+          behaviorOptions={behaviorOptions}
+          busy={editorBusy}
+          onChooseBinding={(binding) => void stageBinding(binding)}
+          onCancel={closePicker}
+        />
+      )}
+
+      {hasUnsavedChanges && (
+        <section className="panel layer-save-strip">
+          <div>
+            <strong>Unsaved keymap changes</strong>
+            <span>Continue editing more keys, then save everything together or discard all staged changes.</span>
+          </div>
+          <div className="layer-save-strip-actions">
+            <button className="button secondary" onClick={discardKeymapChanges} disabled={editorBusy}>Discard</button>
+            <button className="button" onClick={saveKeymapChanges} disabled={editorBusy}>Save to firmware</button>
           </div>
         </section>
-
-        <aside className="panel layer-key-editor">
-          {selectedPosition === null || !draftBinding ? (
-            <div className="layer-editor-empty">
-              <h3>Select a key</h3>
-              <p>Click a key in the layout to edit its behavior.</p>
-            </div>
-          ) : (
-            <>
-              <div className="layer-key-editor-heading">
-                <div>
-                  <span>Layer {activeLayer} · Position {selectedPosition}</span>
-                  <h3>{selectedLabel.title}</h3>
-                  <p>{selectedLabel.subtitle || 'Current binding'}</p>
-                </div>
-              </div>
-
-              <label>
-                Behavior
-                {behaviorOptions === null ? (
-                  <div className="select-placeholder">Loading behaviors…</div>
-                ) : behaviorOptions.length ? (
-                  <select value={draftBinding.behaviorId} onChange={(event) => changeBehavior(Number(event.target.value))}>
-                    {!behaviorOptions.some((option) => option.id === draftBinding.behaviorId) && (
-                      <option value={draftBinding.behaviorId}>Unknown behavior (#{draftBinding.behaviorId})</option>
-                    )}
-                    {behaviorOptions.map((option) => (
-                      <option key={option.id} value={option.id}>{option.displayName} (#{option.id})</option>
-                    ))}
-                  </select>
-                ) : (
-                  <input type="number" value={draftBinding.behaviorId} onChange={(event) => changeBehavior(Number(event.target.value))} />
-                )}
-              </label>
-
-              <label>
-                Param 1
-                <input type="number" value={draftBinding.param1} onChange={(event) => setDraftBinding({ ...draftBinding, param1: Number(event.target.value) })} />
-                <small>{describeParam(behaviorOptions?.find((item) => item.id === draftBinding.behaviorId), 1, draftBinding.param1).text || '—'}</small>
-              </label>
-
-              <label>
-                Param 2
-                <input type="number" value={draftBinding.param2} onChange={(event) => setDraftBinding({ ...draftBinding, param2: Number(event.target.value) })} />
-                <small>{describeParam(behaviorOptions?.find((item) => item.id === draftBinding.behaviorId), 2, draftBinding.param2).text || '—'}</small>
-              </label>
-
-              <div className="layer-editor-preview">
-                <span>Preview</span>
-                <strong>{selectedLabel.title}</strong>
-                {selectedLabel.subtitle && <small>{selectedLabel.subtitle}</small>}
-              </div>
-
-              <button className="button" onClick={applyBindingChange} disabled={editorBusy}>
-                {editorBusy ? 'Applying…' : 'Apply change'}
-              </button>
-              <p className="layer-editor-hint">Apply stages the change. Use “Save to firmware” above to persist it, or “Discard” to revert staged edits.</p>
-            </>
-          )}
-        </aside>
-      </div>
+      )}
     </div>
   );
 }
