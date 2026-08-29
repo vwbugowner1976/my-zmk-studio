@@ -24,7 +24,7 @@ function mouseButtonLabel(name: string, value: number) {
     MB4: 'Back', MOUSEBUTTON4: 'Back', BUTTON4: 'Back',
     MB5: 'Forward', MOUSEBUTTON5: 'Forward', BUTTON5: 'Forward',
   };
-  return byName[compact] ?? name || `Value ${value}`;
+  return byName[compact] ?? (name || `Value ${value}`);
 }
 
 function displayConstant(option: BehaviorOption | undefined, item: BehaviorParameterValueDescription) {
