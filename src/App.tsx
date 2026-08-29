@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   call_rpc,
   create_rpc_connection,
@@ -49,40 +49,44 @@ function PositionPicker({
   selected: number[];
   onChange: (positions: number[]) => void;
 }) {
-  if (!keys?.length) return <p>Physical layout is not available from this firmware.</p>;
+  if (!keys?.length) {
+    return <p>Physical layout is not available from this firmware.</p>;
+  }
 
   const toUnits = (value: number) => value / 100;
   const maxX = Math.max(...keys.map((key) => toUnits(key.x) + toUnits(key.width)));
   const maxY = Math.max(...keys.map((key) => toUnits(key.y) + toUnits(key.height)));
 
+  const toggle = (position: number) => {
+    const next = selected.includes(position)
+      ? selected.filter((value) => value !== position)
+      : [...selected, position].sort((a, b) => a - b);
+    onChange(next);
+  };
+
   return (
     <div className="layout-scroll">
-      <div className="position-picker" style={{ width: maxX * KEY_UNIT_PX, height: maxY * KEY_UNIT_PX }}>
-        {keys.map((key, position) => {
-          const active = selected.includes(position);
-          return (
-            <button
-              key={position}
-              type="button"
-              className={`position-key ${active ? 'selected' : ''}`}
-              style={{
-                left: toUnits(key.x) * KEY_UNIT_PX,
-                top: toUnits(key.y) * KEY_UNIT_PX,
-                width: Math.max(30, toUnits(key.width) * KEY_UNIT_PX - 3),
-                height: Math.max(30, toUnits(key.height) * KEY_UNIT_PX - 3),
-              }}
-              onClick={() => {
-                const next = active
-                  ? selected.filter((value) => value !== position)
-                  : [...selected, position].sort((a, b) => a - b);
-                onChange(next);
-              }}
-              title={`Position ${position}`}
-            >
-              {position}
-            </button>
-          );
-        })}
+      <div
+        className="position-picker"
+        style={{ width: maxX * KEY_UNIT_PX, height: maxY * KEY_UNIT_PX }}
+      >
+        {keys.map((key, position) => (
+          <button
+            key={position}
+            type="button"
+            className={`position-key ${selected.includes(position) ? 'selected' : ''}`}
+            style={{
+              left: toUnits(key.x) * KEY_UNIT_PX,
+              top: toUnits(key.y) * KEY_UNIT_PX,
+              width: Math.max(30, toUnits(key.width) * KEY_UNIT_PX - 3),
+              height: Math.max(30, toUnits(key.height) * KEY_UNIT_PX - 3),
+            }}
+            onClick={() => toggle(position)}
+            title={`Position ${position}`}
+          >
+            {position}
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -93,10 +97,10 @@ export default function App() {
   const [connection, setConnection] = useState<RpcConnection | null>(null);
   const [subsystems, setSubsystems] = useState<CustomSubsystem[]>([]);
   const [combos, setCombos] = useState<RuntimeComboRecord[]>([]);
-  const [physicalKeys, setPhysicalKeys] = useState<KeyPhysicalAttrs[] | null>(null);
+  const [comboError, setComboError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [draft, setDraft] = useState<RuntimeComboRecord | null>(null);
-  const [comboError, setComboError] = useState<string | null>(null);
+  const [physicalKeys, setPhysicalKeys] = useState<KeyPhysicalAttrs[] | null>(null);
   const [debugLines, setDebugLines] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('Chrome / Edge Web Serial ready');
@@ -108,6 +112,10 @@ export default function App() {
     () => subsystems.find((subsystem) => subsystem.identifier === RUNTIME_COMBO_SUBSYSTEM_ID),
     [subsystems],
   );
+  const selectedBehaviorName = useMemo(() => {
+    if (!draft || !behaviorOptions) return '';
+    return behaviorOptions.find((option) => option.id === draft.behaviorId)?.displayName ?? '';
+  }, [draft, behaviorOptions]);
 
   function debug(event: string, detail?: unknown) {
     const timestamp = new Date().toISOString().slice(11, 23);
@@ -133,10 +141,16 @@ export default function App() {
       });
       const responsePayload = response.custom?.call?.payload;
       if (!responsePayload) throw new Error('Runtime Combo returned no payload');
-      debug(`RPC <- ${label}`, `${Math.round(performance.now() - started)}ms bytes=[${hex(responsePayload)}]`);
+      debug(
+        `RPC <- ${label}`,
+        `${Math.round(performance.now() - started)}ms bytes=[${hex(responsePayload)}]`,
+      );
       return responsePayload;
     } catch (error) {
-      debug(`RPC !! ${label}`, `${Math.round(performance.now() - started)}ms ${error instanceof Error ? error.message : String(error)}`);
+      debug(
+        `RPC !! ${label}`,
+        `${Math.round(performance.now() - started)}ms ${error instanceof Error ? error.message : String(error)}`,
+      );
       throw error;
     }
   }
@@ -146,9 +160,16 @@ export default function App() {
       debug('RPC -> keymap.getPhysicalLayouts');
       const resp = await call_rpc(nextConnection, { keymap: { getPhysicalLayouts: true } });
       const layouts = resp?.keymap?.getPhysicalLayouts;
-      if (!layouts) return null;
-      const keys = layouts.layouts[layouts.activeLayoutIndex]?.keys ?? null;
-      debug('Physical layout loaded', { activeLayoutIndex: layouts.activeLayoutIndex, keyCount: keys?.length ?? 0 });
+      if (!layouts) {
+        debug('Physical layout unavailable');
+        return null;
+      }
+      const layout = layouts.layouts[layouts.activeLayoutIndex];
+      const keys = layout?.keys ?? null;
+      debug('Physical layout loaded', {
+        activeLayoutIndex: layouts.activeLayoutIndex,
+        keyCount: keys?.length ?? 0,
+      });
       return keys;
     } catch (error) {
       debug('Physical layout failed', error instanceof Error ? error.message : String(error));
@@ -158,7 +179,12 @@ export default function App() {
 
   async function readRuntimeCombos(nextConnection: RpcConnection, subsystemIndex: number) {
     try {
-      const payload = await callRuntimeCombo(nextConnection, subsystemIndex, encodeListCombosRequest(), 'list_combos');
+      const payload = await callRuntimeCombo(
+        nextConnection,
+        subsystemIndex,
+        encodeListCombosRequest(),
+        'list_combos',
+      );
       const loaded = decodeRuntimeComboResponse(payload);
       debug('list_combos decoded', { count: loaded.length });
       return { combos: loaded, mode: 'list' as const };
@@ -186,13 +212,26 @@ export default function App() {
             `get_combo(${index})`,
           );
           const combo = decodeGetComboResponse(comboPayload);
-          if (combo) loaded.push(combo);
+          if (combo) {
+            loaded.push(combo);
+            debug('combo decoded', {
+              index: combo.index,
+              name: combo.name,
+              positions: combo.keyPositions,
+              behaviorId: combo.behaviorId,
+              source: combo.source,
+            });
+          }
         } catch (comboReadError) {
           const text = comboReadError instanceof Error ? comboReadError.message : String(comboReadError);
-          if (text.includes('-2') || text.includes('-22')) continue;
+          if (text.includes('-2') || text.includes('-22')) {
+            debug(`get_combo(${index}) skipped`, text);
+            continue;
+          }
           throw comboReadError;
         }
       }
+
       debug('indexed fallback complete', { count: loaded.length, maxCombo });
       return { combos: loaded, mode: 'indexed' as const, listError, maxCombo };
     }
@@ -203,6 +242,27 @@ export default function App() {
     setDraft({ ...combo, keyPositions: [...combo.keyPositions] });
     debug('Editor selected combo', { index: combo.index, name: combo.name });
   }
+
+  function changeBehavior(behaviorId: number) {
+    if (!draft) return;
+    const option = behaviorOptions?.find((item) => item.id === behaviorId);
+    debug('Behavior changed', {
+      from: draft.behaviorId,
+      to: behaviorId,
+      name: option?.displayName ?? '',
+      resetParams: true,
+    });
+    setDraft({
+      ...draft,
+      behaviorId,
+      param1: 0,
+      param2: 0,
+    });
+  }
+
+  useEffect(() => {
+    if (!connection) setPhysicalKeys(null);
+  }, [connection]);
 
   async function connectUsb() {
     setBusy(true);
@@ -231,12 +291,13 @@ export default function App() {
       let loadedCombos: RuntimeComboRecord[] = [];
       let localComboError: string | null = null;
       let readMode = '';
+
       if (runtimeComboDetected) {
         const result = await readRuntimeCombos(nextConnection, runtimeComboDetected.index);
         loadedCombos = result.combos;
         readMode = result.mode;
         if (result.mode === 'indexed') {
-          localComboError = `list_combos failed (${result.listError}); recovered ${loadedCombos.length} combo(s) via indexed fallback.`;
+          localComboError = `list_combos failed (${result.listError}); recovered ${loadedCombos.length} combo(s) via get_combo over ${result.maxCombo} slots.`;
         }
       }
 
@@ -246,11 +307,14 @@ export default function App() {
       setPhysicalKeys(keys);
       setCombos(loadedCombos);
       setComboError(localComboError);
-      setMessage(
-        runtimeComboDetected
-          ? `Connected. Read ${loadedCombos.length} Runtime Combo(s)${readMode === 'indexed' ? ' using indexed fallback' : ''}.`
-          : `Connected. ${detected.length} Custom Subsystem(s) detected.`,
-      );
+
+      if (runtimeComboDetected) {
+        setMessage(
+          `Connected. Read ${loadedCombos.length} Runtime Combo(s)${readMode === 'indexed' ? ' using indexed fallback' : ''}.`,
+        );
+      } else {
+        setMessage(`Connected. ${detected.length} Custom Subsystem(s) detected.`);
+      }
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error);
       debug('Connection failed', text);
@@ -267,11 +331,15 @@ export default function App() {
     try {
       const result = await readRuntimeCombos(connection, runtimeCombo.index);
       setCombos(result.combos);
+      if (result.mode === 'indexed') {
+        setComboError(
+          `list_combos failed (${result.listError}); recovered ${result.combos.length} combo(s) via indexed fallback.`,
+        );
+      }
       const selected = selectedIndex === null
         ? null
         : result.combos.find((combo) => combo.index === selectedIndex) ?? null;
       if (selected) selectCombo(selected);
-      if (result.mode === 'indexed') setComboError(`list_combos failed (${result.listError}); indexed fallback used.`);
       setMessage(`Refreshed ${result.combos.length} Runtime Combo(s).`);
     } catch (error) {
       setComboError(error instanceof Error ? error.message : String(error));
@@ -291,6 +359,7 @@ export default function App() {
     setComboError(null);
     try {
       debug('Save flow begin', draft);
+
       const setPayload = await callRuntimeCombo(
         connection,
         runtimeCombo.index,
@@ -308,16 +377,26 @@ export default function App() {
       debug('set_combo_name status', decodeStatusResponse(namePayload));
 
       const saveStarted = performance.now();
-      const savePayload = await callRuntimeCombo(connection, runtimeCombo.index, encodeSaveRequest(), 'save');
+      const savePayload = await callRuntimeCombo(
+        connection,
+        runtimeCombo.index,
+        encodeSaveRequest(),
+        'save',
+      );
       const saveStatus = decodeStatusResponse(savePayload);
-      debug('save status', { ...saveStatus, elapsedMs: Math.round(performance.now() - saveStarted) });
+      debug('save status', {
+        ...saveStatus,
+        elapsedMs: Math.round(performance.now() - saveStarted),
+      });
 
       const result = await readRuntimeCombos(connection, runtimeCombo.index);
       setCombos(result.combos);
       const saved = result.combos.find((combo) => combo.index === draft.index) ?? null;
       if (saved) selectCombo(saved);
-      if (result.mode === 'indexed') setComboError(`list_combos still failed (${result.listError}); indexed re-read succeeded.`);
       setMessage(`Saved combo #${draft.index} and re-read ${result.combos.length} combo(s).`);
+      if (result.mode === 'indexed') {
+        setComboError(`list_combos still failed (${result.listError}); indexed re-read succeeded.`);
+      }
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error);
       debug('Save flow failed', text);
@@ -341,15 +420,11 @@ export default function App() {
     setSubsystems([]);
     setCombos([]);
     setPhysicalKeys(null);
+    setComboError(null);
     setSelectedIndex(null);
     setDraft(null);
-    setComboError(null);
     setMessage('Disconnected');
   }
-
-  const selectedBehaviorName = draft
-    ? behaviorOptions?.find((option) => option.id === draft.behaviorId)?.displayName
-    : undefined;
 
   return (
     <div className="app-shell">
@@ -479,7 +554,7 @@ export default function App() {
                           ) : behaviorOptions.length ? (
                             <select
                               value={draft.behaviorId}
-                              onChange={(event) => setDraft({ ...draft, behaviorId: Number(event.target.value) })}
+                              onChange={(event) => changeBehavior(Number(event.target.value))}
                             >
                               {!behaviorOptions.some((option) => option.id === draft.behaviorId) && (
                                 <option value={draft.behaviorId}>Unknown behavior (#{draft.behaviorId})</option>
@@ -494,7 +569,7 @@ export default function App() {
                             <input
                               type="number"
                               value={draft.behaviorId}
-                              onChange={(event) => setDraft({ ...draft, behaviorId: Number(event.target.value) })}
+                              onChange={(event) => changeBehavior(Number(event.target.value))}
                             />
                           )}
                           <small>{selectedBehaviorName ? `Selected: ${selectedBehaviorName}` : `Behavior ID: ${draft.behaviorId}`}</small>
