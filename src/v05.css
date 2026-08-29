@@ -111,11 +111,26 @@
   position: absolute;
   display: grid;
   place-items: center;
-  padding: 0;
+  padding: 2px;
   border-radius: 6px;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
+  overflow: hidden;
   transition: transform .08s ease, filter .08s ease, opacity .08s ease;
+}
+.backup-keymap-key > small {
+  position: absolute;
+  left: 3px;
+  top: 1px;
+  color: #64748b;
+  font-size: 6px;
+  font-weight: 600;
+}
+.backup-keymap-key > span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .backup-keymap-key.same {
   border: 1px solid #334155;
@@ -131,7 +146,7 @@
   opacity: 1;
 }
 .backup-keymap-key:hover { transform: translateY(-1px); filter: brightness(1.12); z-index: 20; }
-.backup-keymap-key strong {
+.backup-keymap-key > strong {
   position: absolute;
   right: 3px;
   top: 1px;
@@ -141,7 +156,7 @@
 .backup-keymap-tooltip {
   position: absolute;
   z-index: 100;
-  width: 292px;
+  width: 322px;
   padding: 10px 12px;
   border-radius: 10px;
   pointer-events: none;
@@ -151,15 +166,20 @@
 .backup-keymap-tooltip.changed { border: 1px solid #f59e0b; }
 .backup-keymap-tooltip.same { border: 1px solid #475569; }
 .backup-keymap-tooltip > strong { display: block; margin-bottom: 7px; color: #f8fafc; }
-.backup-keymap-tooltip div {
+.tooltip-binding-row {
   display: grid;
   grid-template-columns: 54px minmax(0, 1fr);
   gap: 8px;
   align-items: start;
-  margin-top: 5px;
+  margin-top: 7px;
 }
-.backup-keymap-tooltip span { color: #94a3b8; font-size: 10px; text-transform: uppercase; }
-.backup-keymap-tooltip code { color: #e2e8f0; font-size: 10px; white-space: normal; overflow-wrap: anywhere; }
+.tooltip-binding-row > span { color: #94a3b8; font-size: 10px; text-transform: uppercase; }
+
+.diff-binding-label { display: grid; gap: 2px; min-width: 0; }
+.diff-binding-label strong { color: #f8fafc; font-size: 14px; line-height: 1.15; }
+.diff-binding-label span { color: #93c5fd; font-size: 10px; }
+.diff-binding-label small { color: #64748b; font-size: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.backup-keymap-tooltip .diff-binding-label strong { font-size: 13px; }
 
 .backup-diff-table-wrap { overflow-x: auto; }
 .backup-diff-table { width: 100%; border-collapse: collapse; min-width: 720px; }
@@ -172,7 +192,6 @@
 }
 .backup-diff-table th { color: #94a3b8; background: #0f172a; font-size: 11px; text-transform: uppercase; }
 .backup-diff-table td { color: #cbd5e1; }
-.backup-diff-table code { color: #cbd5e1; white-space: normal; overflow-wrap: anywhere; }
 .backup-diff-table tr.changed td { background: #2a1b08; }
 .backup-diff-table tr.changed td:last-child { color: #fdba74; font-weight: 700; }
 .backup-no-diff { padding: 24px; color: #94a3b8; text-align: center; }
