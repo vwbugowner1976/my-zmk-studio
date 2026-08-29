@@ -1,36 +1,57 @@
 # My ZMK Studio
 
-A lightweight, independent web UI for configuring ZMK keyboards at runtime.
+A lightweight local web UI for inspecting, testing, and exporting data from ZMK Studio enabled firmware.
 
-## Initial goal
+My ZMK Studio is intentionally useful as a developer/diagnostic companion to DYA Studio rather than a replacement for it.
 
-The first milestone focuses on Runtime Combo editing:
+## v0.4
 
-- Connect to a ZMK keyboard
-- Load the current combo list
-- Add / edit / delete combos
-- Save changes
-- Re-read the combo list from firmware after save
+### Runtime Combo
 
-The UI is intentionally separated from the transport/RPC implementation so USB and BLE backends can be added without rewriting the editor.
+- Connect to ZMK Studio over Web Serial
+- Detect DYA-compatible Custom Studio RPC subsystems
+- Read Runtime Combos
+- Edit combo key positions from the firmware's physical layout
+- Select behaviors by firmware-provided display name
+- Save and re-read state from firmware
+- Compatibility fallback for older/broken `list_combos` implementations
 
-## Current status
+### Layer Viewer
 
-The repository currently contains:
+The keymap viewer is read-only.
 
-- React + TypeScript + Vite app shell
-- Runtime Combo editor UI
-- RuntimeComboClient transport/service abstraction
-- Demo client for UI development
-- Save flow designed as `set -> save -> reload`
+- Reads the active physical layout from firmware
+- Reads all layers with standard `keymap.getKeymap`
+- Switch between layers without editing them
+- Displays behavior names when available
+- Shows raw behavior parameters below the behavior label
+- Supports rotated physical-layout keys
+- Export the current layer as PNG
+- Export every layer as individual PNG files
+- Export all layers as one PDF, one layer per page
 
-The real DYA/ZMK Studio compatible RPC transport is the next step.
+### Developer tools
+
+- Persistent Debug Console
+- RPC timing/payload logs
+- Logs survive disconnect and page reload
+- Copy / Clear / Hide controls
+- Clean Web Serial teardown so another Studio can connect immediately after disconnect
 
 ## Development
+
+After pulling a version that changes dependencies, run:
 
 ```bash
 npm install
 npm run dev
+```
+
+On Windows PowerShell in environments where `npm.ps1` is blocked:
+
+```powershell
+npm.cmd install
+npm.cmd run dev
 ```
 
 Production build:
@@ -39,19 +60,27 @@ Production build:
 npm run build
 ```
 
-## Planned roadmap
+## Architecture
 
-### v0.1
-- Runtime Combo
-- USB transport
-- BLE transport
+```text
+ZMK firmware
+  |
+  | ZMK Studio RPC / DYA-compatible Custom RPC
+  v
+My ZMK Studio
+  |- Runtime Combo inspector/editor
+  |- Layer Viewer
+  |- PNG/PDF exporter
+  `- Debug Console
+```
 
-### Later
-- PMW3610 settings
-- PAW3222 settings
-- BLE management
-- Additional ZMK custom settings modules
+The Layer Viewer does not call keymap mutation RPCs. Runtime Combo saves always re-read the firmware state after saving instead of assuming local state matches persistent storage.
 
-## Design rule
+## Future ideas
 
-After a successful save, My ZMK Studio should always fetch the state again from firmware instead of assuming the local UI state matches persistent storage.
+- Rich keycode names instead of raw numeric parameters
+- Custom Settings inspector
+- BLE Management diagnostics
+- PMW3610 diagnostics/settings
+- PAW3222 diagnostics/settings
+- Generic Custom Subsystem inspector
