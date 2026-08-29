@@ -12,6 +12,7 @@ import {
 import LayerViewer from './LayerViewer';
 import KeymapBackup from './KeymapBackup';
 import ComboEditor from './ComboEditor';
+import CustomSettings from './CustomSettings';
 import {
   decodeGetComboResponse,
   decodeGlobalSettingsResponse,
@@ -29,9 +30,10 @@ import {
 import { useBehaviorOptions } from './useStudioCore';
 
 const RUNTIME_COMBO_SUBSYSTEM_ID = 'cormoran__runtime_combo';
+const CUSTOM_SETTINGS_SUBSYSTEM_ID = 'cormoran_custom_settings';
 
 type CustomSubsystem = { index: number; identifier: string };
-type ActiveTool = 'runtime-combo' | 'layer-viewer' | 'keymap-backup';
+type ActiveTool = 'runtime-combo' | 'layer-viewer' | 'keymap-backup' | 'custom-settings';
 
 const sourceLabel = (source: number) => {
   if (source === 1) return 'Default';
@@ -64,6 +66,10 @@ export default function App() {
   const connected = !!transport && !!connection;
   const runtimeCombo = useMemo(
     () => subsystems.find((subsystem) => subsystem.identifier === RUNTIME_COMBO_SUBSYSTEM_ID),
+    [subsystems],
+  );
+  const customSettings = useMemo(
+    () => subsystems.find((subsystem) => subsystem.identifier === CUSTOM_SETTINGS_SUBSYSTEM_ID),
     [subsystems],
   );
   const maxCombos = comboSettings?.maxCombo || 16;
@@ -340,12 +346,20 @@ export default function App() {
     }
   }
 
-  const title = activeTool === 'layer-viewer' ? 'Layer Viewer' : activeTool === 'keymap-backup' ? 'Keymap Backup' : 'Runtime Combo';
+  const title = activeTool === 'layer-viewer'
+    ? 'Layer Viewer'
+    : activeTool === 'keymap-backup'
+      ? 'Keymap Backup'
+      : activeTool === 'custom-settings'
+        ? 'Custom Settings'
+        : 'Runtime Combo';
   const description = activeTool === 'layer-viewer'
     ? 'View and edit the live firmware keymap, with PNG and PDF export.'
     : activeTool === 'keymap-backup'
       ? 'Backup the live keymap to JSON or restore a matching backup.'
-      : 'Create and tune Runtime Combos with a guided editor.';
+      : activeTool === 'custom-settings'
+        ? 'Edit typed settings exposed by firmware modules, then save or discard staged changes.'
+        : 'Create and tune Runtime Combos with a guided editor.';
 
   return (
     <div className="app-shell">
@@ -375,7 +389,7 @@ export default function App() {
               <button className={`nav-item ${activeTool === 'runtime-combo' ? 'active' : ''}`} onClick={() => setActiveTool('runtime-combo')}>Runtime Combo</button>
               <button className={`nav-item ${activeTool === 'layer-viewer' ? 'active' : ''}`} onClick={() => setActiveTool('layer-viewer')}>Layer Viewer</button>
               <button className={`nav-item ${activeTool === 'keymap-backup' ? 'active' : ''}`} onClick={() => setActiveTool('keymap-backup')}>Keymap Backup</button>
-              <button className="nav-item" disabled>Custom Settings</button>
+              <button className={`nav-item ${activeTool === 'custom-settings' ? 'active' : ''}`} onClick={() => setActiveTool('custom-settings')}>Custom Settings</button>
               <button className="nav-item" disabled>BLE Management</button>
               <button className="nav-item" disabled>PMW3610</button>
               <button className="nav-item" disabled>PAW3222</button>
@@ -402,6 +416,18 @@ export default function App() {
             <LayerViewer connection={connection} physicalKeys={physicalKeys} behaviorOptions={behaviorOptions} onDebug={debug} />
           ) : activeTool === 'keymap-backup' && connection ? (
             <KeymapBackup connection={connection} onDebug={debug} />
+          ) : activeTool === 'custom-settings' && connection ? (
+            customSettings ? (
+              <CustomSettings
+                connection={connection}
+                customSettingsSubsystemIndex={customSettings.index}
+                subsystems={subsystems}
+                behaviorOptions={behaviorOptions}
+                onDebug={debug}
+              />
+            ) : (
+              <div className="panel empty"><div><h3>Custom Settings unavailable</h3><p>This firmware does not advertise cormoran_custom_settings.</p></div></div>
+            )
           ) : (
             <>
               <div className="status-strip panel">
