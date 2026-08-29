@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { call_rpc, type RpcConnection } from '@zmkfirmware/zmk-studio-ts-client';
+import type { BehaviorBindingParametersSet } from '@zmkfirmware/zmk-studio-ts-client/behaviors';
 
 export type BehaviorOption = {
   id: number;
   displayName: string;
+  metadata: BehaviorBindingParametersSet[];
 };
 
 export function useBehaviorOptions(connection: RpcConnection | null | undefined) {
@@ -32,10 +34,14 @@ export function useBehaviorOptions(connection: RpcConnection | null | undefined)
 
       setOptions(
         details
-          .map((resp, index) => ({
-            id: ids[index],
-            displayName: resp?.behaviors?.getBehaviorDetails?.displayName ?? '',
-          }))
+          .map((resp, index) => {
+            const detail = resp?.behaviors?.getBehaviorDetails;
+            return {
+              id: ids[index],
+              displayName: detail?.displayName ?? '',
+              metadata: detail?.metadata ?? [],
+            };
+          })
           .filter((option) => option.displayName)
           .sort((a, b) => a.displayName.localeCompare(b.displayName)),
       );
