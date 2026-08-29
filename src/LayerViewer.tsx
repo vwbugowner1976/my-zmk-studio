@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type Ref } from 'react';
 import { call_rpc, type RpcConnection } from '@zmkfirmware/zmk-studio-ts-client';
 import type { BehaviorParameterValueDescription } from '@zmkfirmware/zmk-studio-ts-client/behaviors';
 import type {
@@ -158,14 +158,16 @@ function LayerSvg({
   behaviorOptions,
   svgRef,
   selectedPosition = null,
+  stagedPositions,
   onSelectPosition,
 }: {
   layer: Layer;
   layerIndex: number;
   keys: KeyPhysicalAttrs[];
   behaviorOptions: BehaviorOption[] | null;
-  svgRef?: React.Ref<SVGSVGElement>;
+  svgRef?: Ref<SVGSVGElement>;
   selectedPosition?: number | null;
+  stagedPositions?: Set<number>;
   onSelectPosition?: (position: number) => void;
 }) {
   const g = geometry(keys);
@@ -186,7 +188,7 @@ function LayerSvg({
         Layer {layerIndex}: {layer.name || `Layer ${layerIndex}`}
       </text>
       <text x={PADDING} y={49} fill="#94a3b8" fontSize="11">
-        My ZMK Studio · click a key to edit
+        My ZMK Studio · click a key to edit · orange border = staged change
       </text>
 
       {keys.map((key, position) => {
@@ -204,24 +206,37 @@ function LayerSvg({
         const titleFontSize = label.title.length <= maxChars ? 11 : 9.5;
         const centerY = y + height / 2;
         const selected = selectedPosition === position;
+        const staged = stagedPositions?.has(position) ?? false;
 
         return (
           <g
             key={position}
             transform={transform}
-            className={`layer-key-group ${onSelectPosition ? 'editable' : ''} ${selected ? 'selected' : ''}`}
+            className={`layer-key-group ${onSelectPosition ? 'editable' : ''} ${selected ? 'selected' : ''} ${staged ? 'staged' : ''}`}
             onClick={onSelectPosition ? () => onSelectPosition(position) : undefined}
             onMouseEnter={() => setHovered({ position, label, x: x + width / 2, y })}
           >
+            {staged && (
+              <rect
+                x={x - 2.5}
+                y={y - 2.5}
+                width={width + 5}
+                height={height + 5}
+                rx="9"
+                fill="none"
+                stroke="#f59e0b"
+                strokeWidth="2"
+              />
+            )}
             <rect
               x={x}
               y={y}
               width={width}
               height={height}
               rx="7"
-              fill={selected ? '#172554' : '#1e293b'}
-              stroke={selected ? '#60a5fa' : '#475569'}
-              strokeWidth={selected ? '2.5' : '1'}
+              fill={selected ? '#172554' : staged ? '#2a1b08' : '#1e293b'}
+              stroke={selected ? '#60a5fa' : staged ? '#f59e0b' : '#475569'}
+              strokeWidth={selected ? '2.5' : staged ? '1.5' : '1'}
             />
             {titleLines.map((line, lineIndex) => (
               <text
@@ -237,11 +252,11 @@ function LayerSvg({
               </text>
             ))}
             {subtitle && (
-              <text x={x + width / 2} y={centerY + 15} textAnchor="middle" fill="#93c5fd" fontSize="7.5">
+              <text x={x + width / 2} y={centerY + 15} textAnchor="middle" fill={staged ? '#fbbf24' : '#93c5fd'} fontSize="7.5">
                 {subtitle}
               </text>
             )}
-            <text x={x + 5} y={y + 11} fill={selected ? '#93c5fd' : '#64748b'} fontSize="7">{position}</text>
+            <text x={x + 5} y={y + 11} fill={selected ? '#93c5fd' : staged ? '#fbbf24' : '#64748b'} fontSize="7">{position}</text>
           </g>
         );
       })}
@@ -323,10 +338,19 @@ export default function LayerViewer({
   const [selectedPosition, setSelectedPosition] = useState<number | null>(null);
   const [selectedBinding, setSelectedBinding] = useState<BehaviorBinding | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [stagedKeys, setStagedKeys] = useState<Set<string>>(() => new Set());
   const currentSvgRef = useRef<SVGSVGElement | null>(null);
 
   const layer = keymap?.layers[activeLayer] ?? null;
   const behaviorMapReady = useMemo(() => behaviorOptions !== null, [behaviorOptions]);
+  const stagedPositions = useMemo(() => {
+    const result = new Set<number>();
+    for (const token of stagedKeys) {
+      const [layerIndex, position] = token.split(':').map(Number);
+      if (layerIndex === activeLayer) result.add(position);
+    }
+    return result;
+  }, [stagedKeys, activeLayer]);
 
   function selectPosition(position: number) {
     if (!layer || editorBusy) return;
@@ -368,6 +392,8 @@ export default function LayerViewer({
   }
 
   useEffect(() => {
+    setStagedKeys(new Set());
+    setHasUnsavedChanges(false);
     void loadKeymap();
   }, [connection]);
 
@@ -411,6 +437,11 @@ export default function LayerViewer({
           }),
         };
       });
+      setStagedKeys((current) => {
+        const next = new Set(current);
+        next.add(`${activeLayer}:${position}`);
+        return next;
+      });
       setHasUnsavedChanges(true);
       closePicker();
       onDebug('Layer binding staged', { layer: activeLayer, position, behaviorId: binding.behaviorId });
@@ -432,6 +463,7 @@ export default function LayerViewer({
       const result = response.keymap?.saveChanges;
       if (!result?.ok) throw new Error(`saveChanges failed (${result?.err ?? 'unknown'}).`);
       setHasUnsavedChanges(false);
+      setStagedKeys(new Set());
       onDebug('Keymap changes saved');
       await loadKeymap();
     } catch (cause) {
@@ -452,6 +484,7 @@ export default function LayerViewer({
       const result = response.keymap?.discardChanges;
       if (result !== true) throw new Error('discardChanges failed.');
       setHasUnsavedChanges(false);
+      setStagedKeys(new Set());
       onDebug('Keymap changes discarded');
       await loadKeymap();
     } catch (cause) {
@@ -567,10 +600,10 @@ export default function LayerViewer({
       <section className="panel layer-toolbar">
         <div>
           <h3>Layer Viewer / Editor</h3>
-          <p>{keymap.layers.length} layer(s) · {physicalKeys.length} physical key(s) · select a key, then choose its new key below</p>
+          <p>{keymap.layers.length} layer(s) · {physicalKeys.length} physical key(s) · orange border = staged edit</p>
         </div>
         <div className="layer-export-actions">
-          {hasUnsavedChanges && <span className="layer-unsaved-badge">Unsaved changes</span>}
+          {hasUnsavedChanges && <span className="layer-unsaved-badge">{stagedKeys.size} changed key(s)</span>}
           <button className="button secondary" onClick={loadKeymap} disabled={loading || exporting || editorBusy}>Refresh</button>
           <button className="button secondary" onClick={exportCurrentPng} disabled={exporting || editorBusy}>PNG</button>
           <button className="button secondary" onClick={exportAllPng} disabled={exporting || editorBusy}>All PNG</button>
@@ -584,11 +617,14 @@ export default function LayerViewer({
       {!behaviorMapReady && <div className="notice">Behavior metadata is still loading; key choices will appear when it is ready.</div>}
 
       <div className="layer-tabs" role="tablist">
-        {keymap.layers.map((item, index) => (
-          <button key={item.id} className={`layer-tab ${activeLayer === index ? 'active' : ''}`} onClick={() => setActiveLayer(index)}>
-            <strong>{index}</strong><span>{item.name || `Layer ${index}`}</span>
-          </button>
-        ))}
+        {keymap.layers.map((item, index) => {
+          const count = Array.from(stagedKeys).filter((token) => token.startsWith(`${index}:`)).length;
+          return (
+            <button key={item.id} className={`layer-tab ${activeLayer === index ? 'active' : ''} ${count ? 'has-staged' : ''}`} onClick={() => setActiveLayer(index)}>
+              <strong>{index}</strong><span>{item.name || `Layer ${index}`}</span>{count > 0 && <em>{count}</em>}
+            </button>
+          );
+        })}
       </div>
 
       <section className="panel layer-canvas-panel">
@@ -600,6 +636,7 @@ export default function LayerViewer({
             behaviorOptions={behaviorOptions}
             svgRef={currentSvgRef}
             selectedPosition={selectedPosition}
+            stagedPositions={stagedPositions}
             onSelectPosition={selectPosition}
           />
         </div>
@@ -620,8 +657,8 @@ export default function LayerViewer({
       {hasUnsavedChanges && (
         <section className="panel layer-save-strip">
           <div>
-            <strong>Unsaved keymap changes</strong>
-            <span>Continue editing more keys, then save everything together or discard all staged changes.</span>
+            <strong>{stagedKeys.size} unsaved keymap change(s)</strong>
+            <span>Orange borders mark staged keys. Continue editing, then save everything together or discard all changes.</span>
           </div>
           <div className="layer-save-strip-actions">
             <button className="button secondary" onClick={discardKeymapChanges} disabled={editorBusy}>Discard</button>
