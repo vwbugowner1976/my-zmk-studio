@@ -18,8 +18,30 @@ import {
 
 type SubsystemInfo = { index: number; identifier: string };
 
+const RUNTIME_COMBO_SUBSYSTEM_ID = 'cormoran__runtime_combo';
+
 function settingToken(setting: CustomSettingRecord) {
   return `${setting.customSubsystemIndex}:${setting.key}:${setting.value?.type === 'array' ? setting.value.index : ''}`;
+}
+
+function subsystemDisplayName(identifier: string | undefined, index: number) {
+  if (!identifier) return `Unknown subsystem ${index}`;
+  const known: Record<string, string> = {
+    cormoran__runtime_combo: 'Runtime Combo',
+    cormoran_ble: 'BLE Management',
+    cormoran_custom_settings: 'Custom Settings',
+    cormoran_rip: 'Runtime Input Processor',
+    cormoran_rsr: 'Runtime Sensor Rotation',
+    tom_oled__codex_status: 'Tom OLED / Codex Status',
+    zmk__battery_history: 'Battery History',
+    zmk__settings: 'ZMK Settings',
+  };
+  if (known[identifier]) return known[identifier];
+  return identifier
+    .replace(/^cormoran_+/, '')
+    .replace(/^zmk_+/, 'ZMK ')
+    .replace(/_+/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function scalarEqual(a: CustomSettingScalar, b: CustomSettingScalar) {
@@ -73,7 +95,7 @@ function SettingEditor({
     return (
       <div className="custom-setting-readonly">
         <strong>{settingValueText(setting.value)}</strong>
-        <small>{draft?.type === 'array' ? 'Array editing will be added after the scalar editor is verified.' : 'Bytes/record values are read-only in this first version.'}</small>
+        <small>{draft?.type === 'array' ? 'Array editing is available through the dedicated tool when one exists.' : 'Bytes/record values are read-only in the generic editor.'}</small>
       </div>
     );
   }
@@ -92,7 +114,7 @@ function SettingEditor({
     <div className="custom-setting-editor">
       {options?.type === 'options' ? (
         <select
-          value={draft.type === 'bool' ? String(draft.value) : String(draft.value)}
+          value={String(draft.value)}
           disabled={busy || secureWrite}
           onChange={(event) => {
             const selected = options.values[Number(event.target.selectedOptions[0]?.dataset.index ?? 0)];
@@ -101,7 +123,7 @@ function SettingEditor({
           }}
         >
           {options.values.map((value, index) => (
-            <option key={index} data-index={index} value={value.type === 'bool' ? String(value.value) : String(value.value)}>
+            <option key={index} data-index={index} value={String(value.value)}>
               {optionLabel(value, options.labels[index] ?? '')}
             </option>
           ))}
@@ -160,6 +182,7 @@ export default function CustomSettings({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const receivedRef = useRef<Map<string, CustomSettingRecord>>(new Map());
+  const initialLoadRef = useRef<{ connection: RpcConnection; subsystemIndex: number } | null>(null);
 
   const subsystemNames = useMemo(
     () => new Map(subsystems.map((subsystem) => [subsystem.index, subsystem.identifier])),
@@ -172,7 +195,14 @@ export default function CustomSettings({
       group.push(setting);
       groups.set(setting.customSubsystemIndex, group);
     }
-    return [...groups.entries()].sort((a, b) => (subsystemNames.get(a[0]) ?? '').localeCompare(subsystemNames.get(b[0]) ?? ''));
+    for (const group of groups.values()) {
+      group.sort((a, b) => a.key.localeCompare(b.key) || ((a.value?.type === 'array' ? a.value.index : -1) - (b.value?.type === 'array' ? b.value.index : -1)));
+    }
+    return [...groups.entries()].sort((a, b) => {
+      const aName = subsystemDisplayName(subsystemNames.get(a[0]), a[0]);
+      const bName = subsystemDisplayName(subsystemNames.get(b[0]), b[0]);
+      return aName.localeCompare(bName);
+    });
   }, [settings, subsystemNames]);
   const unsavedCount = settings.filter((setting) => setting.hasUnsavedValue).length;
 
@@ -198,13 +228,18 @@ export default function CustomSettings({
         const token = settingToken(decoded.setting);
         receivedRef.current.set(token, decoded.setting);
         setSettings([...receivedRef.current.values()].sort((a, b) => a.customSubsystemIndex - b.customSubsystemIndex || a.key.localeCompare(b.key)));
-        onDebug('Custom Settings notification', { kind: decoded.kind, key: decoded.setting.key, owner: decoded.setting.customSubsystemIndex });
+        onDebug('Custom Settings notification', {
+          kind: decoded.kind,
+          key: decoded.setting.key,
+          owner: decoded.setting.customSubsystemIndex,
+          ownerName: subsystemDisplayName(subsystemNames.get(decoded.setting.customSubsystemIndex), decoded.setting.customSubsystemIndex),
+        });
       } catch (cause) {
         onDebug('Custom Settings notification decode failed', cause instanceof Error ? cause.message : String(cause));
       }
     });
     return unsubscribe;
-  }, [connection, customSettingsSubsystemIndex]);
+  }, [connection, customSettingsSubsystemIndex, subsystemNames]);
 
   async function loadSettings() {
     setLoading(true);
@@ -221,7 +256,7 @@ export default function CustomSettings({
       const loaded = [...receivedRef.current.values()].sort((a, b) => a.customSubsystemIndex - b.customSubsystemIndex || a.key.localeCompare(b.key));
       setSettings(loaded);
       setMessage(status.affectedCount
-        ? `Loaded ${loaded.length} of ${status.affectedCount} setting notification(s).`
+        ? `Loaded ${loaded.length} of ${status.affectedCount} setting notification(s) from ${new Set(loaded.map((item) => item.customSubsystemIndex)).size} subsystem(s).`
         : 'Firmware currently exposes no Custom Settings values.');
       onDebug('Custom Settings loaded', { expected: status.affectedCount, received: loaded.length });
     } catch (cause) {
@@ -235,6 +270,9 @@ export default function CustomSettings({
   }
 
   useEffect(() => {
+    const previous = initialLoadRef.current;
+    if (previous?.connection === connection && previous.subsystemIndex === customSettingsSubsystemIndex) return;
+    initialLoadRef.current = { connection, subsystemIndex: customSettingsSubsystemIndex };
     void loadSettings();
   }, [connection, customSettingsSubsystemIndex]);
 
@@ -292,7 +330,7 @@ export default function CustomSettings({
       <section className="panel custom-settings-toolbar">
         <div>
           <h3>Custom Settings</h3>
-          <p>Generic firmware settings exposed through cormoran_custom_settings.</p>
+          <p>Firmware settings grouped by the subsystem that owns them.</p>
         </div>
         <div className="custom-settings-actions">
           {unsavedCount > 0 && <span className="layer-unsaved-badge">{unsavedCount} staged</span>}
@@ -311,25 +349,43 @@ export default function CustomSettings({
         <div className="panel empty"><div><h3>No registered settings yet</h3><p>The Custom Settings subsystem is active, but no module currently registers an editable setting. The next step is to expose PMW3610, OLED, or other module values through the registry.</p></div></div>
       ) : (
         <div className="custom-settings-groups">
-          {grouped.map(([ownerIndex, items]) => (
-            <section className="panel custom-settings-group" key={ownerIndex}>
-              <div className="custom-settings-group-title">
-                <div><span>Subsystem #{ownerIndex}</span><h3>{subsystemNames.get(ownerIndex) ?? `Unknown subsystem ${ownerIndex}`}</h3></div>
-                <strong>{items.length} setting(s)</strong>
-              </div>
-              <div className="custom-settings-list">
-                {items.map((setting) => (
-                  <div className={`custom-setting-row ${setting.hasUnsavedValue ? 'staged' : ''}`} key={settingToken(setting)}>
-                    <div className="custom-setting-info">
-                      <div><strong>{setting.key}</strong>{setting.hasUnsavedValue && <span>Staged</span>}</div>
-                      <small>Current: {settingValueText(setting.value)} · source {setting.source}</small>
-                    </div>
-                    <SettingEditor setting={setting} behaviorOptions={behaviorOptions} busy={busy} onApply={stageSetting} />
+          {grouped.map(([ownerIndex, items]) => {
+            const identifier = subsystemNames.get(ownerIndex);
+            const displayName = subsystemDisplayName(identifier, ownerIndex);
+            const managedByRuntimeCombo = identifier === RUNTIME_COMBO_SUBSYSTEM_ID;
+            const groupUnsaved = items.filter((item) => item.hasUnsavedValue).length;
+            return (
+              <details className={`panel custom-settings-group ${managedByRuntimeCombo ? 'managed-group' : ''}`} key={ownerIndex} open={!managedByRuntimeCombo}>
+                <summary className="custom-settings-group-title">
+                  <div>
+                    <span>Subsystem #{ownerIndex}{identifier ? ` · ${identifier}` : ''}</span>
+                    <h3>{displayName}</h3>
+                    {managedByRuntimeCombo && <small>Managed primarily by the Runtime Combo editor.</small>}
                   </div>
-                ))}
-              </div>
-            </section>
-          ))}
+                  <div className="custom-settings-group-counts">
+                    {groupUnsaved > 0 && <em>{groupUnsaved} staged</em>}
+                    <strong>{items.length} setting(s)</strong>
+                  </div>
+                </summary>
+                {managedByRuntimeCombo && (
+                  <div className="custom-settings-managed-note">
+                    Combo records and names are easier and safer to edit in Runtime Combo. This generic view is kept for inspection and advanced scalar settings.
+                  </div>
+                )}
+                <div className="custom-settings-list">
+                  {items.map((setting) => (
+                    <div className={`custom-setting-row ${setting.hasUnsavedValue ? 'staged' : ''}`} key={settingToken(setting)}>
+                      <div className="custom-setting-info">
+                        <div><strong>{setting.key}</strong>{setting.hasUnsavedValue && <span>Staged</span>}</div>
+                        <small>Current: {settingValueText(setting.value)} · source {setting.source}</small>
+                      </div>
+                      <SettingEditor setting={setting} behaviorOptions={behaviorOptions} busy={busy} onApply={stageSetting} />
+                    </div>
+                  ))}
+                </div>
+              </details>
+            );
+          })}
         </div>
       )}
 
