@@ -4,6 +4,7 @@ import App from './App';
 import DebugConsole from './DebugConsole';
 import './styles.css';
 import './layerViewer.css';
+import './comboEditor.css';
 import './v05.css';
 import './keymapDiffGuide.css';
 import './debugConsoleOverride.css';
