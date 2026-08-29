@@ -2,80 +2,96 @@ import { useMemo, useState } from 'react';
 import type { BehaviorBinding } from '@zmkfirmware/zmk-studio-ts-client/keymap';
 import type { BehaviorOption } from './useStudioCore';
 
+type PickerLayout = 'US' | 'JP';
+
 type KeyChoice = {
   label: string;
   page: number;
   usage: number;
+  units?: number;
+  secondary?: string;
 };
 
-const LETTERS: KeyChoice[] = Array.from({ length: 26 }, (_, index) => ({
-  label: String.fromCharCode(65 + index),
+const LAYOUT_STORAGE_KEY = 'my-zmk-studio-key-picker-layout';
+
+const key = (label: string, usage: number, units = 1, secondary?: string): KeyChoice => ({
+  label,
   page: 0x07,
-  usage: 4 + index,
-}));
+  usage,
+  units,
+  secondary,
+});
 
-const NUMBERS: KeyChoice[] = [
-  ...Array.from({ length: 9 }, (_, index) => ({ label: String(index + 1), page: 0x07, usage: 30 + index })),
-  { label: '0', page: 0x07, usage: 39 },
+const letters: Record<string, number> = Object.fromEntries(
+  Array.from({ length: 26 }, (_, index) => [String.fromCharCode(65 + index), 4 + index]),
+);
+
+const US_ROWS: KeyChoice[][] = [
+  [
+    key('Esc', 41, 1.25),
+    ...Array.from({ length: 12 }, (_, index) => key(`F${index + 1}`, 58 + index)),
+  ],
+  [
+    key('`', 53, 1, '~'), key('1', 30, 1, '!'), key('2', 31, 1, '@'), key('3', 32, 1, '#'),
+    key('4', 33, 1, '$'), key('5', 34, 1, '%'), key('6', 35, 1, '^'), key('7', 36, 1, '&'),
+    key('8', 37, 1, '*'), key('9', 38, 1, '('), key('0', 39, 1, ')'), key('-', 45, 1, '_'),
+    key('=', 46, 1, '+'), key('Backspace', 42, 2),
+  ],
+  [
+    key('Tab', 43, 1.5), ...'QWERTYUIOP'.split('').map((label) => key(label, letters[label])),
+    key('[', 47, 1, '{'), key(']', 48, 1, '}'), key('\\', 49, 1.5, '|'),
+  ],
+  [
+    key('Caps', 57, 1.8), ...'ASDFGHJKL'.split('').map((label) => key(label, letters[label])),
+    key(';', 51, 1, ':'), key("'", 52, 1, '"'), key('Enter', 40, 2.2),
+  ],
+  [
+    key('LShift', 225, 2.25), ...'ZXCVBNM'.split('').map((label) => key(label, letters[label])),
+    key(',', 54, 1, '<'), key('.', 55, 1, '>'), key('/', 56, 1, '?'), key('RShift', 229, 2.75),
+  ],
+  [
+    key('LCtrl', 224, 1.4), key('LGUI', 227, 1.4), key('LAlt', 226, 1.4), key('Space', 44, 6.2),
+    key('RAlt', 230, 1.4), key('RGUI', 231, 1.4), key('RCtrl', 228, 1.4),
+  ],
 ];
 
-const MODIFIERS: KeyChoice[] = [
-  { label: 'LCtrl', page: 0x07, usage: 224 },
-  { label: 'LShift', page: 0x07, usage: 225 },
-  { label: 'LAlt', page: 0x07, usage: 226 },
-  { label: 'LGUI', page: 0x07, usage: 227 },
-  { label: 'RCtrl', page: 0x07, usage: 228 },
-  { label: 'RShift', page: 0x07, usage: 229 },
-  { label: 'RAlt', page: 0x07, usage: 230 },
-  { label: 'RGUI', page: 0x07, usage: 231 },
+const JP_ROWS: KeyChoice[][] = [
+  [
+    key('Esc', 41, 1.25),
+    ...Array.from({ length: 12 }, (_, index) => key(`F${index + 1}`, 58 + index)),
+  ],
+  [
+    key('半角/全角', 53, 1.35), key('1', 30, 1, '!'), key('2', 31, 1, '"'), key('3', 32, 1, '#'),
+    key('4', 33, 1, '$'), key('5', 34, 1, '%'), key('6', 35, 1, '&'), key('7', 36, 1, "'"),
+    key('8', 37, 1, '('), key('9', 38, 1, ')'), key('0', 39), key('-', 45, 1, '='),
+    key('^', 46, 1, '~'), key('¥', 137, 1, '|'), key('Backspace', 42, 1.8),
+  ],
+  [
+    key('Tab', 43, 1.5), ...'QWERTYUIOP'.split('').map((label) => key(label, letters[label])),
+    key('@', 47, 1, '`'), key('[', 48, 1, '{'), key('Enter', 40, 2),
+  ],
+  [
+    key('Caps', 57, 1.8), ...'ASDFGHJKL'.split('').map((label) => key(label, letters[label])),
+    key(';', 51, 1, '+'), key(':', 52, 1, '*'), key(']', 50, 1, '}'),
+  ],
+  [
+    key('LShift', 225, 2.1), ...'ZXCVBNM'.split('').map((label) => key(label, letters[label])),
+    key(',', 54, 1, '<'), key('.', 55, 1, '>'), key('/', 56, 1, '?'), key('\\', 135, 1, '_'),
+    key('RShift', 229, 2.1),
+  ],
+  [
+    key('LCtrl', 224, 1.3), key('LGUI', 227, 1.3), key('LAlt', 226, 1.3), key('無変換', 139, 1.45),
+    key('Space', 44, 3.5), key('変換', 138, 1.45), key('かな', 136, 1.45), key('RAlt', 230, 1.3), key('RCtrl', 228, 1.3),
+  ],
 ];
-
-const NAVIGATION: KeyChoice[] = [
-  { label: 'Esc', page: 0x07, usage: 41 },
-  { label: 'Tab', page: 0x07, usage: 43 },
-  { label: 'Enter', page: 0x07, usage: 40 },
-  { label: 'Space', page: 0x07, usage: 44 },
-  { label: 'Backspace', page: 0x07, usage: 42 },
-  { label: 'Delete', page: 0x07, usage: 76 },
-  { label: 'Insert', page: 0x07, usage: 73 },
-  { label: 'Home', page: 0x07, usage: 74 },
-  { label: 'End', page: 0x07, usage: 77 },
-  { label: 'Page Up', page: 0x07, usage: 75 },
-  { label: 'Page Down', page: 0x07, usage: 78 },
-  { label: '←', page: 0x07, usage: 80 },
-  { label: '↓', page: 0x07, usage: 81 },
-  { label: '↑', page: 0x07, usage: 82 },
-  { label: '→', page: 0x07, usage: 79 },
-];
-
-const SYMBOLS: KeyChoice[] = [
-  { label: '-', page: 0x07, usage: 45 },
-  { label: '=', page: 0x07, usage: 46 },
-  { label: '[', page: 0x07, usage: 47 },
-  { label: ']', page: 0x07, usage: 48 },
-  { label: '\\', page: 0x07, usage: 49 },
-  { label: ';', page: 0x07, usage: 51 },
-  { label: "'", page: 0x07, usage: 52 },
-  { label: '`', page: 0x07, usage: 53 },
-  { label: ',', page: 0x07, usage: 54 },
-  { label: '.', page: 0x07, usage: 55 },
-  { label: '/', page: 0x07, usage: 56 },
-  { label: 'Caps Lock', page: 0x07, usage: 57 },
-];
-
-const FUNCTION_KEYS: KeyChoice[] = Array.from({ length: 12 }, (_, index) => ({
-  label: `F${index + 1}`,
-  page: 0x07,
-  usage: 58 + index,
-}));
 
 const MEDIA: KeyChoice[] = [
-  { label: 'Play/Pause', page: 0x0c, usage: 0xcd },
-  { label: 'Previous', page: 0x0c, usage: 0xb6 },
-  { label: 'Next', page: 0x0c, usage: 0xb5 },
-  { label: 'Mute', page: 0x0c, usage: 0xe2 },
-  { label: 'Volume -', page: 0x0c, usage: 0xea },
-  { label: 'Volume +', page: 0x0c, usage: 0xe9 },
+  { label: 'Play/Pause', page: 0x0c, usage: 0xcd, units: 1.5 },
+  { label: 'Previous', page: 0x0c, usage: 0xb6, units: 1.4 },
+  { label: 'Next', page: 0x0c, usage: 0xb5, units: 1.2 },
+  { label: 'Mute', page: 0x0c, usage: 0xe2, units: 1.1 },
+  { label: 'Volume -', page: 0x0c, usage: 0xea, units: 1.3 },
+  { label: 'Volume +', page: 0x0c, usage: 0xe9, units: 1.3 },
 ];
 
 function encodedUsage(choice: KeyChoice) {
@@ -87,29 +103,31 @@ function findKeyPressBehavior(options: BehaviorOption[] | null) {
   return options.find((option) => /key\s*press|keypress/i.test(option.displayName));
 }
 
-function Section({ title, choices, onChoose, disabled }: {
-  title: string;
-  choices: KeyChoice[];
+function loadLayout(): PickerLayout {
+  try {
+    return window.localStorage.getItem(LAYOUT_STORAGE_KEY) === 'JP' ? 'JP' : 'US';
+  } catch {
+    return 'US';
+  }
+}
+
+function KeyboardKey({ choice, onChoose, disabled }: {
+  choice: KeyChoice;
   onChoose: (choice: KeyChoice) => void;
   disabled: boolean;
 }) {
   return (
-    <section className="key-picker-section">
-      <h4>{title}</h4>
-      <div className="key-picker-grid">
-        {choices.map((choice) => (
-          <button
-            type="button"
-            className="key-picker-key"
-            key={`${choice.page}:${choice.usage}`}
-            disabled={disabled}
-            onClick={() => onChoose(choice)}
-          >
-            {choice.label}
-          </button>
-        ))}
-      </div>
-    </section>
+    <button
+      type="button"
+      className="key-picker-key keyboard-layout-key"
+      style={{ '--key-units': choice.units ?? 1 } as React.CSSProperties}
+      disabled={disabled}
+      onClick={() => onChoose(choice)}
+      title={`HID ${choice.page.toString(16)}:${choice.usage.toString(16)}`}
+    >
+      {choice.secondary && <small>{choice.secondary}</small>}
+      <strong>{choice.label}</strong>
+    </button>
   );
 }
 
@@ -129,8 +147,10 @@ export default function KeyPicker({
   onCancel: () => void;
 }) {
   const [advanced, setAdvanced] = useState(false);
+  const [layout, setLayout] = useState<PickerLayout>(loadLayout);
   const [advancedBinding, setAdvancedBinding] = useState<BehaviorBinding>({ ...currentBinding });
   const keyPressBehavior = useMemo(() => findKeyPressBehavior(behaviorOptions), [behaviorOptions]);
+  const rows = layout === 'JP' ? JP_ROWS : US_ROWS;
 
   function choose(choice: KeyChoice) {
     if (!keyPressBehavior) return;
@@ -141,17 +161,32 @@ export default function KeyPicker({
     });
   }
 
+  function changeLayout(next: PickerLayout) {
+    setLayout(next);
+    try {
+      window.localStorage.setItem(LAYOUT_STORAGE_KEY, next);
+    } catch {
+      // Keep the in-memory choice if localStorage is unavailable.
+    }
+  }
+
   return (
     <section className="panel key-picker-panel">
       <div className="key-picker-heading">
         <div>
           <span>Editing position {position}</span>
           <h3>Choose a key</h3>
-          <p>Selecting a key stages the change immediately and closes this picker.</p>
+          <p>Select a key from a standard {layout === 'JP' ? 'Japanese JIS' : 'US ANSI'} layout. The picker closes after staging it.</p>
         </div>
         <div className="key-picker-heading-actions">
+          {!advanced && (
+            <div className="key-layout-toggle" role="group" aria-label="Keyboard layout">
+              <button type="button" className={layout === 'US' ? 'active' : ''} onClick={() => changeLayout('US')}>US</button>
+              <button type="button" className={layout === 'JP' ? 'active' : ''} onClick={() => changeLayout('JP')}>JP</button>
+            </div>
+          )}
           <button type="button" className="button secondary" onClick={() => setAdvanced((value) => !value)}>
-            {advanced ? 'Quick keys' : 'Advanced'}
+            {advanced ? 'Keyboard' : 'Advanced'}
           </button>
           <button type="button" className="button secondary" onClick={onCancel}>Cancel</button>
         </div>
@@ -162,15 +197,31 @@ export default function KeyPicker({
       )}
 
       {!advanced ? (
-        <div className="key-picker-sections">
-          <Section title="Letters" choices={LETTERS} onChoose={choose} disabled={busy || !keyPressBehavior} />
-          <Section title="Numbers" choices={NUMBERS} onChoose={choose} disabled={busy || !keyPressBehavior} />
-          <Section title="Modifiers" choices={MODIFIERS} onChoose={choose} disabled={busy || !keyPressBehavior} />
-          <Section title="Navigation" choices={NAVIGATION} onChoose={choose} disabled={busy || !keyPressBehavior} />
-          <Section title="Symbols" choices={SYMBOLS} onChoose={choose} disabled={busy || !keyPressBehavior} />
-          <Section title="Function" choices={FUNCTION_KEYS} onChoose={choose} disabled={busy || !keyPressBehavior} />
-          <Section title="Media" choices={MEDIA} onChoose={choose} disabled={busy || !keyPressBehavior} />
-        </div>
+        <>
+          <div className={`standard-keyboard-picker layout-${layout.toLowerCase()}`}>
+            {rows.map((row, rowIndex) => (
+              <div className="standard-keyboard-row" key={`${layout}:${rowIndex}`}>
+                {row.map((choice, choiceIndex) => (
+                  <KeyboardKey
+                    key={`${choice.page}:${choice.usage}:${choiceIndex}`}
+                    choice={choice}
+                    onChoose={choose}
+                    disabled={busy || !keyPressBehavior}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+
+          <div className="key-picker-extra">
+            <span>Media</span>
+            <div className="key-picker-extra-keys">
+              {MEDIA.map((choice) => (
+                <KeyboardKey key={`${choice.page}:${choice.usage}`} choice={choice} onChoose={choose} disabled={busy || !keyPressBehavior} />
+              ))}
+            </div>
+          </div>
+        </>
       ) : (
         <div className="key-picker-advanced">
           <label>
