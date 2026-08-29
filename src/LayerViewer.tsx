@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { call_rpc, type RpcConnection } from '@zmkfirmware/zmk-studio-ts-client';
+import type { BehaviorParameterValueDescription } from '@zmkfirmware/zmk-studio-ts-client/behaviors';
 import type {
   BehaviorBinding,
   KeyPhysicalAttrs,
@@ -13,16 +14,101 @@ const UNIT_PX = 58;
 const PADDING = 28;
 const HEADER = 58;
 
+const KEYBOARD_USAGE: Record<number, string> = {
+  40: 'Enter', 41: 'Esc', 42: 'Backspace', 43: 'Tab', 44: 'Space',
+  45: '-', 46: '=', 47: '[', 48: ']', 49: '\\', 50: '#', 51: ';', 52: "'",
+  53: '`', 54: ',', 55: '.', 56: '/', 57: 'Caps Lock',
+  70: 'Print Screen', 71: 'Scroll Lock', 72: 'Pause', 73: 'Insert', 74: 'Home',
+  75: 'Page Up', 76: 'Delete', 77: 'End', 78: 'Page Down', 79: 'Right', 80: 'Left',
+  81: 'Down', 82: 'Up', 83: 'Num Lock', 84: 'KP /', 85: 'KP *', 86: 'KP -',
+  87: 'KP +', 88: 'KP Enter', 89: 'KP 1', 90: 'KP 2', 91: 'KP 3', 92: 'KP 4',
+  93: 'KP 5', 94: 'KP 6', 95: 'KP 7', 96: 'KP 8', 97: 'KP 9', 98: 'KP 0', 99: 'KP .',
+};
+
+const CONSUMER_USAGE: Record<number, string> = {
+  0xB5: 'Next', 0xB6: 'Previous', 0xB7: 'Stop', 0xCD: 'Play/Pause',
+  0xE2: 'Mute', 0xE9: 'Volume +', 0xEA: 'Volume -',
+};
+
 function safeName(value: string) {
   return value.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'layer';
 }
 
+function keyboardUsageName(usage: number) {
+  if (usage >= 4 && usage <= 29) return String.fromCharCode(65 + usage - 4);
+  if (usage >= 30 && usage <= 38) return String(usage - 29);
+  if (usage === 39) return '0';
+  if (usage >= 58 && usage <= 69) return `F${usage - 57}`;
+  return KEYBOARD_USAGE[usage] ?? `Key 0x${usage.toString(16).toUpperCase()}`;
+}
+
+function decodeHidUsage(value: number) {
+  const modifiers = (value >>> 24) & 0xff;
+  const page = (value >>> 16) & 0xff;
+  const usage = value & 0xffff;
+  const modifierNames = ['Ctrl', 'Shift', 'Alt', 'GUI', 'RCtrl', 'RShift', 'RAlt', 'RGUI'];
+  const prefix = modifierNames.filter((_, bit) => modifiers & (1 << bit));
+
+  let key: string;
+  if (page === 0x07) key = keyboardUsageName(usage);
+  else if (page === 0x0c) key = CONSUMER_USAGE[usage] ?? `Consumer 0x${usage.toString(16).toUpperCase()}`;
+  else key = `HID ${page.toString(16).toUpperCase()}:${usage.toString(16).toUpperCase()}`;
+
+  return [...prefix, key].join('+');
+}
+
+type ParamLabel = { text: string; kind: 'hid' | 'layer' | 'named' | 'raw' | 'none' };
+
+function describeFromMetadata(value: number, descriptions: BehaviorParameterValueDescription[]): ParamLabel | null {
+  for (const description of descriptions) {
+    if (description.constant !== undefined && description.constant === value) {
+      return { text: description.name || String(value), kind: 'named' };
+    }
+  }
+  for (const description of descriptions) {
+    if (description.hidUsage) return { text: decodeHidUsage(value), kind: 'hid' };
+  }
+  for (const description of descriptions) {
+    if (description.range && value >= description.range.min && value <= description.range.max) {
+      const label = description.name ? `${description.name}: ${value}` : String(value);
+      return { text: label, kind: 'named' };
+    }
+  }
+  for (const description of descriptions) {
+    if (description.layerId) return { text: `Layer ${value}`, kind: 'layer' };
+  }
+  for (const description of descriptions) {
+    if (description.nil && value === 0) return { text: '', kind: 'none' };
+  }
+  return null;
+}
+
+function describeParam(option: BehaviorOption | undefined, param: 1 | 2, value: number): ParamLabel {
+  if (!option) return value ? { text: String(value), kind: 'raw' } : { text: '', kind: 'none' };
+  for (const set of option.metadata) {
+    const descriptions = param === 1 ? set.param1 : set.param2;
+    const described = describeFromMetadata(value, descriptions);
+    if (described) return described;
+  }
+  return value ? { text: String(value), kind: 'raw' } : { text: '', kind: 'none' };
+}
+
 function behaviorLabel(binding: BehaviorBinding | undefined, options: BehaviorOption[] | null) {
   if (!binding) return { title: '—', subtitle: '' };
-  const name = options?.find((option) => option.id === binding.behaviorId)?.displayName;
-  const title = name || `Behavior #${binding.behaviorId}`;
-  const params = [binding.param1, binding.param2].filter((value) => value !== 0);
-  return { title, subtitle: params.length ? params.join(' · ') : '' };
+  const option = options?.find((item) => item.id === binding.behaviorId);
+  const name = option?.displayName || `Behavior #${binding.behaviorId}`;
+  const p1 = describeParam(option, 1, binding.param1);
+  const p2 = describeParam(option, 2, binding.param2);
+
+  if (/transparent/i.test(name)) return { title: '▽', subtitle: 'Transparent' };
+  if (/none|disabled/i.test(name)) return { title: '—', subtitle: name };
+
+  if (p1.kind === 'hid' && !p2.text && /key press|keypress/i.test(name)) {
+    return { title: p1.text, subtitle: name };
+  }
+
+  const args = [p1.text, p2.text].filter(Boolean).join(' · ');
+  return { title: name, subtitle: args };
 }
 
 function geometry(keys: KeyPhysicalAttrs[]) {
@@ -34,6 +120,10 @@ function geometry(keys: KeyPhysicalAttrs[]) {
     height: Math.ceil(maxY * UNIT_PX + PADDING * 2 + HEADER),
     u,
   };
+}
+
+function shorten(value: string, max: number) {
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 }
 
 function LayerSvg({
@@ -74,17 +164,18 @@ function LayerSvg({
         const rx = PADDING + g.u(key.rx) * UNIT_PX;
         const ry = PADDING + HEADER + g.u(key.ry) * UNIT_PX;
         const label = behaviorLabel(layer.bindings[position], behaviorOptions);
-        const title = label.title.length > 18 ? `${label.title.slice(0, 17)}…` : label.title;
+        const title = shorten(label.title, width < 50 ? 8 : 13);
+        const subtitle = shorten(label.subtitle, width < 50 ? 10 : 18);
         const transform = key.r ? `rotate(${key.r} ${rx} ${ry})` : undefined;
         return (
           <g key={position} transform={transform}>
             <rect x={x} y={y} width={width} height={height} rx="7" fill="#1e293b" stroke="#475569" strokeWidth="1" />
-            <text x={x + width / 2} y={y + height / 2 - (label.subtitle ? 4 : -3)} textAnchor="middle" fill="#e2e8f0" fontSize="10" fontWeight="700">
+            <text x={x + width / 2} y={y + height / 2 - (subtitle ? 4 : -3)} textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="700">
               {title}
             </text>
-            {label.subtitle && (
-              <text x={x + width / 2} y={y + height / 2 + 10} textAnchor="middle" fill="#93c5fd" fontSize="8">
-                {label.subtitle}
+            {subtitle && (
+              <text x={x + width / 2} y={y + height / 2 + 10} textAnchor="middle" fill="#93c5fd" fontSize="7.5">
+                {subtitle}
               </text>
             )}
             <text x={x + 5} y={y + 11} fill="#64748b" fontSize="7">{position}</text>
@@ -150,7 +241,6 @@ export default function LayerViewer({
   const currentSvgRef = useRef<SVGSVGElement | null>(null);
 
   const layer = keymap?.layers[activeLayer] ?? null;
-
   const behaviorMapReady = useMemo(() => behaviorOptions !== null, [behaviorOptions]);
 
   async function loadKeymap() {
@@ -314,7 +404,7 @@ export default function LayerViewer({
       </section>
 
       {error && <div className="notice">{error}</div>}
-      {!behaviorMapReady && <div className="notice">Behavior names are still loading; IDs will be used temporarily.</div>}
+      {!behaviorMapReady && <div className="notice">Behavior metadata is still loading; raw values will be used temporarily.</div>}
 
       <div className="layer-tabs" role="tablist">
         {keymap.layers.map((item, index) => (
