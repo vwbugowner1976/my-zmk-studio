@@ -23,6 +23,7 @@ import {
   encodeSaveRequest,
   encodeSetComboNameRequest,
   encodeSetComboRequest,
+  type RuntimeComboGlobalSettings,
   type RuntimeComboRecord,
 } from './runtimeComboProtocol';
 import { useBehaviorOptions } from './useStudioCore';
@@ -47,6 +48,7 @@ export default function App() {
   const [connection, setConnection] = useState<RpcConnection | null>(null);
   const [subsystems, setSubsystems] = useState<CustomSubsystem[]>([]);
   const [combos, setCombos] = useState<RuntimeComboRecord[]>([]);
+  const [comboSettings, setComboSettings] = useState<RuntimeComboGlobalSettings | null>(null);
   const [comboError, setComboError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [draft, setDraft] = useState<RuntimeComboRecord | null>(null);
@@ -64,6 +66,14 @@ export default function App() {
     () => subsystems.find((subsystem) => subsystem.identifier === RUNTIME_COMBO_SUBSYSTEM_ID),
     [subsystems],
   );
+  const maxCombos = comboSettings?.maxCombo || 16;
+  const nextFreeComboIndex = useMemo(() => {
+    const used = new Set(combos.map((combo) => combo.index));
+    for (let index = 0; index < maxCombos; index += 1) {
+      if (!used.has(index)) return index;
+    }
+    return null;
+  }, [combos, maxCombos]);
 
   useEffect(() => {
     localStorage.setItem('my-zmk-studio-menu-open', String(menuOpen));
@@ -115,17 +125,17 @@ export default function App() {
   }
 
   async function readRuntimeCombos(nextConnection: RpcConnection, subsystemIndex: number) {
+    const settingsPayload = await callRuntimeCombo(nextConnection, subsystemIndex, encodeGetGlobalSettingsRequest(), 'get_global_settings');
+    const settings = decodeGlobalSettingsResponse(settingsPayload);
+    const maxCombo = settings.maxCombo || 16;
     try {
       const payload = await callRuntimeCombo(nextConnection, subsystemIndex, encodeListCombosRequest(), 'list_combos');
       const loaded = decodeRuntimeComboResponse(payload);
-      debug('list_combos decoded', { count: loaded.length });
-      return { combos: loaded, mode: 'list' as const };
+      debug('list_combos decoded', { count: loaded.length, maxCombo });
+      return { combos: loaded, settings, mode: 'list' as const };
     } catch (error) {
       const listError = error instanceof Error ? error.message : String(error);
       debug('list_combos fallback', listError);
-      const settingsPayload = await callRuntimeCombo(nextConnection, subsystemIndex, encodeGetGlobalSettingsRequest(), 'get_global_settings');
-      const settings = decodeGlobalSettingsResponse(settingsPayload);
-      const maxCombo = settings.maxCombo || 16;
       const loaded: RuntimeComboRecord[] = [];
       for (let index = 0; index < maxCombo; index += 1) {
         try {
@@ -139,14 +149,38 @@ export default function App() {
         }
       }
       debug('indexed fallback complete', { count: loaded.length, maxCombo });
-      return { combos: loaded, mode: 'indexed' as const, listError, maxCombo };
+      return { combos: loaded, settings, mode: 'indexed' as const, listError, maxCombo };
     }
   }
 
   function selectCombo(combo: RuntimeComboRecord) {
     setSelectedIndex(combo.index);
     setDraft({ ...combo, keyPositions: [...combo.keyPositions] });
+    setComboError(null);
     debug('Editor selected combo', { index: combo.index, name: combo.name });
+  }
+
+  function createNewCombo() {
+    if (nextFreeComboIndex === null) return;
+    const keyPressBehavior = behaviorOptions?.find((option) => /key\s*press|keypress/i.test(option.displayName));
+    const next: RuntimeComboRecord = {
+      index: nextFreeComboIndex,
+      name: `New Combo ${nextFreeComboIndex}`,
+      keyPositions: [],
+      behaviorId: keyPressBehavior?.id ?? 0,
+      param1: 0,
+      param2: 0,
+      layerMask: 0,
+      enabled: true,
+      timeoutMs: comboSettings?.timeoutMs || 50,
+      requirePriorIdleMs: comboSettings?.requirePriorIdleMs || 0,
+      slowReleaseOverride: 0,
+      source: 3,
+    };
+    setSelectedIndex(next.index);
+    setDraft(next);
+    setComboError(null);
+    debug('New combo draft created', { index: next.index, maxCombos });
   }
 
   async function connectUsb() {
@@ -175,10 +209,12 @@ export default function App() {
       debug('Custom Subsystems', detected);
       const runtimeComboDetected = detected.find((subsystem) => subsystem.identifier === RUNTIME_COMBO_SUBSYSTEM_ID);
       let loadedCombos: RuntimeComboRecord[] = [];
+      let loadedSettings: RuntimeComboGlobalSettings | null = null;
       let localComboError: string | null = null;
       if (runtimeComboDetected) {
         const result = await readRuntimeCombos(nextConnection, runtimeComboDetected.index);
         loadedCombos = result.combos;
+        loadedSettings = result.settings;
         if (result.mode === 'indexed') {
           localComboError = `list_combos failed (${result.listError}); recovered ${loadedCombos.length} combo(s) via indexed fallback.`;
         }
@@ -188,6 +224,7 @@ export default function App() {
       setSubsystems(detected);
       setPhysicalKeys(keys);
       setCombos(loadedCombos);
+      setComboSettings(loadedSettings);
       setComboError(localComboError);
       setMessage(runtimeComboDetected ? `Connected. Read ${loadedCombos.length} Runtime Combo(s).` : `Connected. ${detected.length} Custom Subsystem(s) detected.`);
     } catch (error) {
@@ -216,6 +253,7 @@ export default function App() {
     try {
       const result = await readRuntimeCombos(connection, runtimeCombo.index);
       setCombos(result.combos);
+      setComboSettings(result.settings);
       if (result.mode === 'indexed') setComboError(`list_combos failed (${result.listError}); indexed fallback succeeded.`);
       const selected = selectedIndex === null ? null : result.combos.find((combo) => combo.index === selectedIndex) ?? null;
       if (selected) selectCombo(selected);
@@ -233,6 +271,10 @@ export default function App() {
       setComboError('Select at least two keys for a combo.');
       return;
     }
+    if (!draft.behaviorId) {
+      setComboError('Choose an output for the combo before saving.');
+      return;
+    }
     setBusy(true);
     setComboError(null);
     try {
@@ -246,6 +288,7 @@ export default function App() {
       debug('save status', { ...decodeStatusResponse(savePayload), elapsedMs: Math.round(performance.now() - saveStarted) });
       const result = await readRuntimeCombos(connection, runtimeCombo.index);
       setCombos(result.combos);
+      setComboSettings(result.settings);
       const saved = result.combos.find((combo) => combo.index === draft.index) ?? null;
       if (saved) selectCombo(saved);
       setMessage(`Saved combo #${draft.index} and re-read ${result.combos.length} combo(s).`);
@@ -288,6 +331,7 @@ export default function App() {
       setConnection(null);
       setSubsystems([]);
       setCombos([]);
+      setComboSettings(null);
       setPhysicalKeys(null);
       setComboError(null);
       setSelectedIndex(null);
@@ -342,7 +386,14 @@ export default function App() {
         <section className="content">
           <div className="content-header">
             <div><div className="eyebrow">Read / inspect / edit</div><h2>{connected ? title : 'Connect your keyboard'}</h2><p>{description}</p></div>
-            {connected && activeTool === 'runtime-combo' && runtimeCombo && <button className="button" onClick={refreshCombos} disabled={busy}>Refresh</button>}
+            {connected && activeTool === 'runtime-combo' && runtimeCombo && (
+              <div className="content-header-actions">
+                <button className="button secondary" onClick={refreshCombos} disabled={busy}>Refresh</button>
+                <button className="button" onClick={createNewCombo} disabled={busy || nextFreeComboIndex === null} title={nextFreeComboIndex === null ? `All ${maxCombos} combo slots are in use` : `Create combo #${nextFreeComboIndex}`}>
+                  + New Combo
+                </button>
+              </div>
+            )}
           </div>
 
           {!connected ? (
@@ -357,6 +408,7 @@ export default function App() {
                 <span>ZMK Studio RPC live</span>
                 <code>{transport?.label || 'unknown'}</code>
                 {runtimeCombo && <code>{runtimeCombo.identifier} #{runtimeCombo.index}</code>}
+                {runtimeCombo && <code>{combos.length}/{maxCombos} slots used</code>}
               </div>
               {comboError && <div className="notice">{comboError}</div>}
               {!runtimeCombo ? (
@@ -364,21 +416,21 @@ export default function App() {
               ) : (
                 <div className="runtime-grid guided-runtime-grid">
                   <section className="panel combo-panel">
-                    <div className="panel-heading"><div><h3>Combos from firmware</h3><p>{combos.length} combo(s). Choose one to edit.</p></div></div>
+                    <div className="panel-heading"><div><h3>Combos from firmware</h3><p>{combos.length} of {maxCombos} slot(s) used. Choose one to edit or create a new combo.</p></div></div>
                     <div className="combo-scroll-box">
                       {combos.length ? combos.map((combo) => (
                         <button className={`combo-row ${selectedIndex === combo.index ? 'selected' : ''}`} key={combo.index} onClick={() => selectCombo(combo)}>
                           <span><strong>#{combo.index} {combo.name || 'Unnamed combo'}</strong><small>{combo.keyPositions.length} keys · {combo.timeoutMs}ms · behavior #{combo.behaviorId}</small></span>
                           <span className={combo.enabled ? 'pill' : 'pill muted'}>{sourceLabel(combo.source)} / {combo.enabled ? 'On' : 'Off'}</span>
                         </button>
-                      )) : <p>No Runtime Combos were returned.</p>}
+                      )) : <p>No Runtime Combos yet. Use “+ New Combo” to create the first one.</p>}
                     </div>
                   </section>
 
                   <section className="panel editor combo-editor-host">
                     {draft ? (
                       <ComboEditor draft={draft} setDraft={setDraft} physicalKeys={physicalKeys} behaviorOptions={behaviorOptions} busy={busy} onSave={() => void saveDraft()} />
-                    ) : <div className="empty">Select a combo from the list.</div>}
+                    ) : <div className="empty">Select a combo from the list or click “+ New Combo”.</div>}
                   </section>
                 </div>
               )}
