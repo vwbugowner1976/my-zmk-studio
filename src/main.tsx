@@ -5,6 +5,7 @@ import DebugConsole from './DebugConsole';
 import './styles.css';
 import './layerViewer.css';
 import './v05.css';
+import './keymapDiffGuide.css';
 import './debugConsoleOverride.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
