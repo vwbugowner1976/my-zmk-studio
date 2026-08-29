@@ -1,0 +1,248 @@
+.guided-runtime-grid {
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+}
+
+.combo-editor-host { min-width: 0; }
+.combo-editor-guided { display: grid; gap: 16px; }
+.combo-editor-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #1f2937;
+}
+.combo-editor-title > div { min-width: 0; }
+.combo-editor-title > div > span {
+  color: #60a5fa;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.combo-editor-title h3 { margin: 4px 0 3px; font-size: 24px; }
+.combo-editor-title p { margin: 0; color: #94a3b8; font-size: 12px; }
+
+.combo-enabled-switch {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 110px;
+  padding: 9px 11px;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  color: #e2e8f0;
+  background: #0f172a;
+  font-size: 12px;
+  font-weight: 800;
+}
+.combo-enabled-switch input { width: 17px; height: 17px; accent-color: #3b82f6; }
+
+.combo-step {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #263244;
+  border-radius: 12px;
+  background: #0b1220;
+}
+.combo-step-number {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #dbeafe;
+  background: #1d4ed8;
+  font-weight: 900;
+}
+.combo-step-body { min-width: 0; display: grid; gap: 12px; }
+.combo-step-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.combo-step-heading h4 { margin: 0 0 2px; color: #f8fafc; font-size: 15px; }
+.combo-step-heading p { margin: 0; color: #94a3b8; font-size: 11px; }
+.combo-count {
+  padding: 5px 8px;
+  border: 1px solid #475569;
+  border-radius: 999px;
+  color: #cbd5e1;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.combo-count.ok { border-color: #22c55e; color: #bbf7d0; background: #052e16; }
+
+.combo-position-scroll {
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid #1f2937;
+  border-radius: 10px;
+  background: #020617;
+}
+.combo-position-picker { position: relative; min-width: max-content; min-height: 70px; }
+.combo-position-key {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  color: #94a3b8;
+  background: #111827;
+  font-size: 9px;
+  font-weight: 800;
+}
+.combo-position-key:hover { border-color: #60a5fa; color: #e2e8f0; }
+.combo-position-key.selected {
+  border: 2px solid #60a5fa;
+  color: #fff;
+  background: #1e3a8a;
+  box-shadow: 0 0 0 1px #1d4ed8 inset;
+}
+.combo-position-key strong {
+  position: absolute;
+  right: 2px;
+  top: 2px;
+  width: 15px;
+  height: 15px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #0f172a;
+  background: #bfdbfe;
+  font-size: 8px;
+}
+.combo-selected-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.combo-selected-list span {
+  padding: 4px 7px;
+  border-radius: 7px;
+  color: #cbd5e1;
+  background: #172033;
+  font-size: 10px;
+}
+
+.combo-output-card {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 12px;
+  padding: 14px 15px;
+  border: 1px solid #3b82f6;
+  border-radius: 11px;
+  color: #f8fafc;
+  background: #101c34;
+  text-align: left;
+}
+.combo-output-card:hover { background: #172554; }
+.combo-output-card > span { color: #93c5fd; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+.combo-output-card strong { grid-column: 1; font-size: 21px; }
+.combo-output-card small { grid-column: 1; color: #94a3b8; }
+.combo-output-card em { grid-column: 2; grid-row: 1 / span 3; align-self: center; color: #93c5fd; font-style: normal; font-weight: 800; }
+
+.combo-timing-grid,
+.combo-options-grid,
+.combo-advanced-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.combo-timing-grid label,
+.combo-options-grid label,
+.combo-advanced-fields label {
+  display: grid;
+  gap: 7px;
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 700;
+}
+.combo-timing-grid label > span { color: #e2e8f0; font-size: 12px; }
+.combo-timing-grid small,
+.combo-advanced-fields small { color: #64748b; font-weight: 500; }
+.combo-options-grid input,
+.combo-advanced-fields input {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  color: #f8fafc;
+  background: #0f172a;
+}
+.combo-number-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border: 1px solid #334155;
+  border-radius: 9px;
+  background: #0f172a;
+  overflow: hidden;
+}
+.combo-number-input input {
+  min-width: 0;
+  padding: 10px;
+  border: 0;
+  outline: 0;
+  color: #f8fafc;
+  background: transparent;
+}
+.combo-number-input b { padding: 0 10px; color: #64748b; font-size: 10px; }
+.combo-presets { display: flex; flex-wrap: wrap; gap: 5px; }
+.combo-presets button,
+.combo-segmented button,
+.combo-advanced-toggle {
+  padding: 6px 8px;
+  border: 1px solid #334155;
+  border-radius: 7px;
+  color: #cbd5e1;
+  background: #111827;
+  font-size: 10px;
+  font-weight: 750;
+}
+.combo-presets button.active,
+.combo-segmented button.active { border-color: #60a5fa; color: #fff; background: #1d4ed8; }
+.combo-advanced-toggle { color: #93c5fd; }
+.combo-segmented { display: flex; gap: 5px; }
+.combo-segmented button { flex: 1; }
+.combo-advanced-fields {
+  padding-top: 12px;
+  border-top: 1px dashed #334155;
+}
+
+.combo-save-bar {
+  position: sticky;
+  bottom: 8px;
+  z-index: 30;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 13px 15px;
+  border: 1px solid #3b82f6;
+  border-radius: 11px;
+  background: rgba(15, 23, 42, .96);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .35);
+}
+.combo-save-bar > div { display: grid; gap: 2px; }
+.combo-save-bar strong { color: #f8fafc; }
+.combo-save-bar span { color: #93c5fd; font-size: 11px; }
+.combo-help { color: #94a3b8; font-size: 11px; }
+
+@media (max-width: 1100px) {
+  .guided-runtime-grid { grid-template-columns: 1fr; }
+  .combo-panel .combo-scroll-box { max-height: 280px; }
+}
+
+@media (max-width: 760px) {
+  .combo-editor-title,
+  .combo-step-heading,
+  .combo-save-bar { align-items: flex-start; flex-direction: column; }
+  .combo-timing-grid,
+  .combo-options-grid,
+  .combo-advanced-fields { grid-template-columns: 1fr; }
+  .combo-step { grid-template-columns: 1fr; }
+  .combo-save-bar .button { width: 100%; }
+}
