@@ -1,0 +1,106 @@
+.backup-diff-guide {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto minmax(180px, 1fr) minmax(240px, 1.2fr);
+  gap: 12px;
+  align-items: stretch;
+  padding: 14px;
+  border-color: #3b4a61;
+  background: #0b1220;
+}
+
+.diff-flow-card,
+.diff-legend-box {
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: #111827;
+}
+
+.diff-flow-card small {
+  display: block;
+  margin-bottom: 3px;
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.diff-flow-card strong {
+  display: block;
+  color: #f8fafc;
+  font-size: 14px;
+}
+
+.diff-flow-card span {
+  display: block;
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.diff-flow-card.before { border-color: #475569; }
+.diff-flow-card.after {
+  border-color: #f59e0b;
+  background: #2a1b08;
+}
+.diff-flow-card.after small,
+.diff-flow-card.after strong { color: #fdba74; }
+
+.diff-flow-arrow {
+  display: grid;
+  place-items: center;
+  color: #f59e0b;
+  font-size: 26px;
+  font-weight: 900;
+}
+
+.diff-legend-box {
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  color: #cbd5e1;
+  font-size: 11px;
+}
+.diff-legend-box span { display: flex; align-items: center; gap: 7px; }
+
+.backup-view-toggle {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid #334155;
+  border-radius: 9px;
+  background: #0f172a;
+}
+.backup-view-toggle button {
+  border: 0;
+  border-radius: 7px;
+  padding: 7px 10px;
+  color: #94a3b8;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 700;
+}
+.backup-view-toggle button.active {
+  color: #fff7ed;
+  background: #92400e;
+}
+
+.diff-result-change { color: #fdba74; }
+
+.backup-keymap-key.changed strong {
+  right: 4px;
+  top: 0;
+  color: #fde68a;
+  font-size: 12px;
+}
+
+@media (max-width: 1050px) {
+  .backup-diff-guide { grid-template-columns: 1fr auto 1fr; }
+  .diff-legend-box { grid-column: 1 / -1; }
+}
+
+@media (max-width: 700px) {
+  .backup-diff-guide { grid-template-columns: 1fr; }
+  .diff-flow-arrow { transform: rotate(90deg); }
+  .diff-legend-box { grid-column: auto; }
+}
