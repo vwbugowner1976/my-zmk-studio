@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { call_rpc, type RpcConnection } from '@zmkfirmware/zmk-studio-ts-client';
-import type { Keymap } from '@zmkfirmware/zmk-studio-ts-client/keymap';
+import type { BehaviorBinding, Keymap } from '@zmkfirmware/zmk-studio-ts-client/keymap';
 
 type BackupFile = {
   format: 'my-zmk-studio-keymap';
@@ -24,8 +24,13 @@ function downloadJson(value: unknown, filename: string) {
   }
 }
 
-function sameBinding(a: Keymap['layers'][number]['bindings'][number], b: Keymap['layers'][number]['bindings'][number]) {
+function sameBinding(a: BehaviorBinding, b: BehaviorBinding) {
   return a.behaviorId === b.behaviorId && a.param1 === b.param1 && a.param2 === b.param2;
+}
+
+function bindingText(binding: BehaviorBinding) {
+  const params = [binding.param1, binding.param2].filter((value) => value !== 0);
+  return `Behavior #${binding.behaviorId}${params.length ? ` · ${params.join(' · ')}` : ''}`;
 }
 
 function validateBackup(value: unknown): BackupFile {
@@ -49,6 +54,8 @@ export default function KeymapBackup({
   const [pending, setPending] = useState<BackupFile | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [previewLayer, setPreviewLayer] = useState(0);
+  const [changedOnly, setChangedOnly] = useState(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   async function readKeymap() {
@@ -103,7 +110,8 @@ export default function KeymapBackup({
         }
       });
       setPending(parsed);
-      setMessage('Backup loaded. Review the summary, then Apply to firmware.');
+      setPreviewLayer(0);
+      setMessage('Backup loaded. Review imported contents and differences before applying.');
       onDebug('Keymap backup selected', { exportedAt: parsed.exportedAt, layers: parsed.keymap.layers.length });
     } catch (error) {
       setPending(null);
@@ -111,19 +119,37 @@ export default function KeymapBackup({
     }
   }
 
-  function diffSummary() {
-    if (!current || !pending) return { bindings: 0, names: 0 };
+  const diff = useMemo(() => {
+    if (!current || !pending) return { bindings: 0, names: 0, byLayer: [] as number[] };
     let bindings = 0;
     let names = 0;
-    pending.keymap.layers.forEach((layer, layerIndex) => {
+    const byLayer = pending.keymap.layers.map((layer, layerIndex) => {
       const live = current.layers[layerIndex];
       if (layer.name !== live.name) names += 1;
+      let layerChanges = 0;
       layer.bindings.forEach((binding, position) => {
-        if (!sameBinding(binding, live.bindings[position])) bindings += 1;
+        if (!sameBinding(binding, live.bindings[position])) {
+          bindings += 1;
+          layerChanges += 1;
+        }
       });
+      return layerChanges;
     });
-    return { bindings, names };
-  }
+    return { bindings, names, byLayer };
+  }, [current, pending]);
+
+  const previewRows = useMemo(() => {
+    if (!current || !pending) return [];
+    const liveLayer = current.layers[previewLayer];
+    const importLayer = pending.keymap.layers[previewLayer];
+    if (!liveLayer || !importLayer) return [];
+    return importLayer.bindings.map((binding, position) => ({
+      position,
+      current: liveLayer.bindings[position],
+      imported: binding,
+      changed: !sameBinding(binding, liveLayer.bindings[position]),
+    })).filter((row) => !changedOnly || row.changed);
+  }, [current, pending, previewLayer, changedOnly]);
 
   async function applyImport() {
     if (!pending) return;
@@ -188,14 +214,15 @@ export default function KeymapBackup({
     }
   }
 
-  const diff = diffSummary();
+  const liveLayer = current?.layers[previewLayer];
+  const importLayer = pending?.keymap.layers[previewLayer];
 
   return (
     <div className="keymap-backup">
       <section className="panel backup-toolbar">
         <div>
           <h3>Keymap Backup</h3>
-          <p>Export the live firmware keymap to JSON, or restore a matching backup.</p>
+          <p>Export the live firmware keymap to JSON, or compare and restore a matching backup.</p>
         </div>
         <div className="backup-actions">
           <button className="button secondary" onClick={() => void readKeymap()} disabled={busy}>Refresh</button>
@@ -213,20 +240,83 @@ export default function KeymapBackup({
         </section>
       )}
 
-      {pending && (
-        <section className="panel import-preview">
-          <div>
-            <h3>Import preview</h3>
-            <p>Exported {pending.exportedAt}</p>
-            <p>{pending.keymap.layers.length} layers · {diff.bindings} binding change(s) · {diff.names} layer name change(s)</p>
+      {pending && current && (
+        <>
+          <section className="panel import-preview">
+            <div>
+              <h3>Import preview</h3>
+              <p>Exported {pending.exportedAt}</p>
+              <p>{pending.keymap.layers.length} layers · {diff.bindings} binding change(s) · {diff.names} layer name change(s)</p>
+            </div>
+            <div className="backup-actions">
+              <button className="button secondary" onClick={() => setPending(null)} disabled={busy}>Cancel</button>
+              <button className="button danger" onClick={applyImport} disabled={busy || (diff.bindings === 0 && diff.names === 0)}>
+                Apply to firmware
+              </button>
+            </div>
+          </section>
+
+          <div className="backup-layer-tabs">
+            {pending.keymap.layers.map((layer, index) => (
+              <button
+                key={layer.id}
+                className={`layer-tab ${previewLayer === index ? 'active' : ''}`}
+                onClick={() => setPreviewLayer(index)}
+              >
+                <strong>{index}</strong>
+                <span>{layer.name || `Layer ${index}`}</span>
+                {diff.byLayer[index] > 0 && <em>{diff.byLayer[index]}</em>}
+              </button>
+            ))}
           </div>
-          <div className="backup-actions">
-            <button className="button secondary" onClick={() => setPending(null)} disabled={busy}>Cancel</button>
-            <button className="button danger" onClick={applyImport} disabled={busy || (diff.bindings === 0 && diff.names === 0)}>
-              Apply to firmware
-            </button>
-          </div>
-        </section>
+
+          <section className="panel backup-diff-panel">
+            <div className="backup-diff-header">
+              <div>
+                <h3>Layer {previewLayer} comparison</h3>
+                <p>
+                  Current: <strong>{liveLayer?.name || `Layer ${previewLayer}`}</strong>
+                  {' → '}
+                  Import: <strong>{importLayer?.name || `Layer ${previewLayer}`}</strong>
+                </p>
+              </div>
+              <label className="backup-filter">
+                <input type="checkbox" checked={changedOnly} onChange={(event) => setChangedOnly(event.target.checked)} />
+                Changed only
+              </label>
+            </div>
+
+            {liveLayer && importLayer && liveLayer.name !== importLayer.name && (
+              <div className="layer-name-diff">
+                <span>Layer name</span>
+                <code>{liveLayer.name || '(empty)'}</code>
+                <span>→</span>
+                <code>{importLayer.name || '(empty)'}</code>
+              </div>
+            )}
+
+            <div className="backup-diff-table-wrap">
+              <table className="backup-diff-table">
+                <thead>
+                  <tr><th>Position</th><th>Current firmware</th><th>Imported backup</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                  {previewRows.map((row) => (
+                    <tr key={row.position} className={row.changed ? 'changed' : ''}>
+                      <td>#{row.position}</td>
+                      <td><code>{bindingText(row.current)}</code></td>
+                      <td><code>{bindingText(row.imported)}</code></td>
+                      <td>{row.changed ? 'Changed' : 'Same'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {previewRows.length === 0 && (
+                <div className="backup-no-diff">No binding changes in this layer.</div>
+              )}
+            </div>
+          </section>
+        </>
       )}
 
       {message && <div className="notice backup-message">{message}</div>}
