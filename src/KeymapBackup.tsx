@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { call_rpc, type RpcConnection } from '@zmkfirmware/zmk-studio-ts-client';
+import type { BehaviorParameterValueDescription } from '@zmkfirmware/zmk-studio-ts-client/behaviors';
 import type { BehaviorBinding, KeyPhysicalAttrs, Keymap } from '@zmkfirmware/zmk-studio-ts-client/keymap';
+import { useBehaviorOptions, type BehaviorOption } from './useStudioCore';
 
 type BackupFile = {
   format: 'my-zmk-studio-keymap';
@@ -17,7 +19,31 @@ type HoverDiff = {
   y: number;
 };
 
+type FriendlyBinding = {
+  primary: string;
+  secondary: string;
+  raw: string;
+};
+
 const KEY_UNIT_PX = 46;
+
+const KEYBOARD_USAGE: Record<number, string> = {
+  40: 'Enter', 41: 'Esc', 42: 'Backspace', 43: 'Tab', 44: 'Space',
+  45: '-', 46: '=', 47: '[', 48: ']', 49: '\\', 50: '#', 51: ';', 52: "'",
+  53: '`', 54: ',', 55: '.', 56: '/', 57: 'Caps Lock',
+  70: 'Print Screen', 71: 'Scroll Lock', 72: 'Pause', 73: 'Insert', 74: 'Home',
+  75: 'Page Up', 76: 'Delete', 77: 'End', 78: 'Page Down', 79: 'Right', 80: 'Left',
+  81: 'Down', 82: 'Up', 83: 'Num Lock', 84: 'KP /', 85: 'KP *', 86: 'KP -',
+  87: 'KP +', 88: 'KP Enter', 89: 'KP 1', 90: 'KP 2', 91: 'KP 3', 92: 'KP 4',
+  93: 'KP 5', 94: 'KP 6', 95: 'KP 7', 96: 'KP 8', 97: 'KP 9', 98: 'KP 0', 99: 'KP .',
+  0xe0: 'LCtrl', 0xe1: 'LShift', 0xe2: 'LAlt', 0xe3: 'LGUI',
+  0xe4: 'RCtrl', 0xe5: 'RShift', 0xe6: 'RAlt', 0xe7: 'RGUI',
+};
+
+const CONSUMER_USAGE: Record<number, string> = {
+  0xB5: 'Next', 0xB6: 'Previous', 0xB7: 'Stop', 0xCD: 'Play/Pause',
+  0xE2: 'Mute', 0xE9: 'Volume +', 0xEA: 'Volume -',
+};
 
 function downloadJson(value: unknown, filename: string) {
   const blob = new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' });
@@ -38,9 +64,104 @@ function sameBinding(a: BehaviorBinding, b: BehaviorBinding) {
   return a.behaviorId === b.behaviorId && a.param1 === b.param1 && a.param2 === b.param2;
 }
 
-function bindingText(binding: BehaviorBinding) {
-  const params = [binding.param1, binding.param2].filter((value) => value !== 0);
-  return `Behavior #${binding.behaviorId}${params.length ? ` · ${params.join(' · ')}` : ''}`;
+function rawBindingText(binding: BehaviorBinding) {
+  return `#${binding.behaviorId} · p1=${binding.param1} · p2=${binding.param2}`;
+}
+
+function keyboardUsageName(usage: number) {
+  if (usage >= 4 && usage <= 29) return String.fromCharCode(65 + usage - 4);
+  if (usage >= 30 && usage <= 38) return String(usage - 29);
+  if (usage === 39) return '0';
+  if (usage >= 58 && usage <= 69) return `F${usage - 57}`;
+  return KEYBOARD_USAGE[usage] ?? `Key 0x${usage.toString(16).toUpperCase()}`;
+}
+
+function decodeHidUsage(value: number) {
+  const modifiers = (value >>> 24) & 0xff;
+  const page = (value >>> 16) & 0xff;
+  const usage = value & 0xffff;
+  const modifierNames = ['LCtrl', 'LShift', 'LAlt', 'LGUI', 'RCtrl', 'RShift', 'RAlt', 'RGUI'];
+  const names = modifierNames.filter((_, bit) => modifiers & (1 << bit));
+
+  let key: string;
+  if (page === 0x07) key = keyboardUsageName(usage);
+  else if (page === 0x0c) key = CONSUMER_USAGE[usage] ?? `Consumer 0x${usage.toString(16).toUpperCase()}`;
+  else key = `HID ${page.toString(16).toUpperCase()}:${usage.toString(16).toUpperCase()}`;
+
+  if (page === 0x07 && usage >= 0xe0 && usage <= 0xe7) {
+    const modifier = keyboardUsageName(usage);
+    return names.includes(modifier) ? names.join('+') : [...names, modifier].join('+');
+  }
+  return [...names, key].join('+');
+}
+
+function describeMetadataValue(value: number, descriptions: BehaviorParameterValueDescription[]): string | null {
+  for (const description of descriptions) {
+    if (description.constant !== undefined && description.constant === value) {
+      return description.name || String(value);
+    }
+  }
+  for (const description of descriptions) {
+    if (description.hidUsage) return decodeHidUsage(value);
+  }
+  for (const description of descriptions) {
+    if (description.layerId) return `Layer ${value}`;
+  }
+  for (const description of descriptions) {
+    if (description.range && value >= description.range.min && value <= description.range.max) {
+      return description.name ? `${description.name} ${value}` : String(value);
+    }
+  }
+  for (const description of descriptions) {
+    if (description.nil && value === 0) return '';
+  }
+  return null;
+}
+
+function describeParam(option: BehaviorOption | undefined, param: 1 | 2, value: number) {
+  if (!option) return value === 0 ? '' : String(value);
+  for (const set of option.metadata) {
+    const descriptions = param === 1 ? set.param1 : set.param2;
+    const result = describeMetadataValue(value, descriptions);
+    if (result !== null) return result;
+  }
+  return value === 0 ? '' : String(value);
+}
+
+function friendlyBinding(binding: BehaviorBinding, options: BehaviorOption[] | null): FriendlyBinding {
+  const raw = rawBindingText(binding);
+  if (binding.behaviorId === 0 && !options?.some((option) => option.id === 0)) {
+    return { primary: '—', secondary: 'Empty', raw };
+  }
+
+  const option = options?.find((item) => item.id === binding.behaviorId);
+  const name = option?.displayName || `Behavior #${binding.behaviorId}`;
+  const p1 = describeParam(option, 1, binding.param1);
+  const p2 = describeParam(option, 2, binding.param2);
+  const args = [p1, p2].filter(Boolean);
+
+  if (/transparent/i.test(name)) return { primary: '▽', secondary: 'Transparent', raw };
+  if (/none|disabled/i.test(name)) return { primary: '—', secondary: name, raw };
+  if (/key press|keypress/i.test(name) && p1 && !p2) {
+    return { primary: p1, secondary: name, raw };
+  }
+
+  return {
+    primary: args.length ? args.join(' · ') : name,
+    secondary: args.length ? name : '',
+    raw,
+  };
+}
+
+function FriendlyBindingView({ binding, options }: { binding: BehaviorBinding; options: BehaviorOption[] | null }) {
+  const label = friendlyBinding(binding, options);
+  return (
+    <div className="diff-binding-label">
+      <strong>{label.primary}</strong>
+      {label.secondary && <span>{label.secondary}</span>}
+      <small>{label.raw}</small>
+    </div>
+  );
 }
 
 function validateBackup(value: unknown): BackupFile {
@@ -57,10 +178,12 @@ function PhysicalDiffMap({
   keys,
   currentBindings,
   importedBindings,
+  behaviorOptions,
 }: {
   keys: KeyPhysicalAttrs[];
   currentBindings: BehaviorBinding[];
   importedBindings: BehaviorBinding[];
+  behaviorOptions: BehaviorOption[] | null;
 }) {
   const [hovered, setHovered] = useState<HoverDiff | null>(null);
   const u = (value: number) => value / 100;
@@ -81,6 +204,7 @@ function PhysicalDiffMap({
           const top = u(key.y) * KEY_UNIT_PX;
           const keyWidth = Math.max(30, u(key.width) * KEY_UNIT_PX - 3);
           const keyHeight = Math.max(30, u(key.height) * KEY_UNIT_PX - 3);
+          const visible = friendlyBinding(changed ? imported : current, behaviorOptions);
 
           return (
             <button
@@ -91,7 +215,8 @@ function PhysicalDiffMap({
               onMouseEnter={() => setHovered({ position, current, imported, x: left + keyWidth / 2, y: top })}
               title={changed ? `Position ${position}: will change` : `Position ${position}: unchanged`}
             >
-              <span>{position}</span>
+              <small>{position}</small>
+              <span>{visible.primary}</span>
               {changed && <strong>→</strong>}
             </button>
           );
@@ -100,11 +225,11 @@ function PhysicalDiffMap({
         {hovered && (
           <div
             className={`backup-keymap-tooltip ${sameBinding(hovered.current, hovered.imported) ? 'same' : 'changed'}`}
-            style={{ left: Math.max(8, Math.min(width - 300, hovered.x - 145)), top: Math.max(8, hovered.y - 94) }}
+            style={{ left: Math.max(8, Math.min(width - 330, hovered.x - 155)), top: Math.max(8, hovered.y - 120) }}
           >
             <strong>Position {hovered.position}</strong>
-            <div><span>Before</span><code>{bindingText(hovered.current)}</code></div>
-            <div><span>After</span><code>{bindingText(hovered.imported)}</code></div>
+            <div className="tooltip-binding-row"><span>Before</span><FriendlyBindingView binding={hovered.current} options={behaviorOptions} /></div>
+            <div className="tooltip-binding-row"><span>After</span><FriendlyBindingView binding={hovered.imported} options={behaviorOptions} /></div>
           </div>
         )}
       </div>
@@ -121,6 +246,7 @@ export default function KeymapBackup({
   physicalKeys?: KeyPhysicalAttrs[] | null;
   onDebug: (event: string, detail?: unknown) => void;
 }) {
+  const behaviorOptions = useBehaviorOptions(connection);
   const [current, setCurrent] = useState<Keymap | null>(null);
   const [pending, setPending] = useState<BackupFile | null>(null);
   const [busy, setBusy] = useState(false);
@@ -417,6 +543,7 @@ export default function KeymapBackup({
                   keys={resolvedPhysicalKeys}
                   currentBindings={liveLayer.bindings}
                   importedBindings={importLayer.bindings}
+                  behaviorOptions={behaviorOptions}
                 />
               </div>
             ) : (
@@ -426,14 +553,14 @@ export default function KeymapBackup({
             <div className="backup-diff-table-wrap">
               <table className="backup-diff-table">
                 <thead>
-                  <tr><th>Position</th><th>Before: current firmware</th><th>After: imported backup</th><th>Result</th></tr>
+                  <tr><th>Position</th><th>Before: current key</th><th>After: imported key</th><th>Result</th></tr>
                 </thead>
                 <tbody>
                   {previewRows.map((row) => (
                     <tr key={row.position} className={row.changed ? 'changed' : ''}>
                       <td>#{row.position}</td>
-                      <td><code>{bindingText(row.current)}</code></td>
-                      <td><code>{bindingText(row.imported)}</code></td>
+                      <td><FriendlyBindingView binding={row.current} options={behaviorOptions} /></td>
+                      <td><FriendlyBindingView binding={row.imported} options={behaviorOptions} /></td>
                       <td>{row.changed ? <strong className="diff-result-change">→ Will change</strong> : 'Unchanged'}</td>
                     </tr>
                   ))}
