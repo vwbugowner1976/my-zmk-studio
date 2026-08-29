@@ -30,6 +30,10 @@ const CONSUMER_USAGE: Record<number, string> = {
   0xE2: 'Mute', 0xE9: 'Volume +', 0xEA: 'Volume -',
 };
 
+type ParamLabel = { text: string; kind: 'hid' | 'layer' | 'named' | 'raw' | 'none' };
+type KeyLabel = { title: string; subtitle: string; detail: string };
+type HoveredKey = { position: number; label: KeyLabel; x: number; y: number };
+
 function safeName(value: string) {
   return value.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'layer';
 }
@@ -57,8 +61,6 @@ function decodeHidUsage(value: number) {
   return [...prefix, key].join('+');
 }
 
-type ParamLabel = { text: string; kind: 'hid' | 'layer' | 'named' | 'raw' | 'none' };
-
 function describeFromMetadata(value: number, descriptions: BehaviorParameterValueDescription[]): ParamLabel | null {
   for (const description of descriptions) {
     if (description.constant !== undefined && description.constant === value) {
@@ -70,8 +72,7 @@ function describeFromMetadata(value: number, descriptions: BehaviorParameterValu
   }
   for (const description of descriptions) {
     if (description.range && value >= description.range.min && value <= description.range.max) {
-      const label = description.name ? `${description.name}: ${value}` : String(value);
-      return { text: label, kind: 'named' };
+      return { text: description.name ? `${description.name}: ${value}` : String(value), kind: 'named' };
     }
   }
   for (const description of descriptions) {
@@ -93,22 +94,33 @@ function describeParam(option: BehaviorOption | undefined, param: 1 | 2, value: 
   return value ? { text: String(value), kind: 'raw' } : { text: '', kind: 'none' };
 }
 
-function behaviorLabel(binding: BehaviorBinding | undefined, options: BehaviorOption[] | null) {
-  if (!binding) return { title: '—', subtitle: '' };
+function behaviorLabel(binding: BehaviorBinding | undefined, options: BehaviorOption[] | null): KeyLabel {
+  if (!binding) return { title: '—', subtitle: '', detail: 'No binding' };
+  if (binding.behaviorId === 0 && !options?.some((item) => item.id === 0)) {
+    return { title: '—', subtitle: 'Empty', detail: 'Empty / unresolved binding' };
+  }
+
   const option = options?.find((item) => item.id === binding.behaviorId);
   const name = option?.displayName || `Behavior #${binding.behaviorId}`;
   const p1 = describeParam(option, 1, binding.param1);
   const p2 = describeParam(option, 2, binding.param2);
+  const args = [p1.text, p2.text].filter(Boolean);
 
-  if (/transparent/i.test(name)) return { title: '▽', subtitle: 'Transparent' };
-  if (/none|disabled/i.test(name)) return { title: '—', subtitle: name };
-
+  if (/transparent/i.test(name)) {
+    return { title: '▽', subtitle: 'Transparent', detail: name };
+  }
+  if (/none|disabled/i.test(name)) {
+    return { title: '—', subtitle: name, detail: name };
+  }
   if (p1.kind === 'hid' && !p2.text && /key press|keypress/i.test(name)) {
-    return { title: p1.text, subtitle: name };
+    return { title: p1.text, subtitle: name, detail: `${p1.text} · ${name}` };
   }
 
-  const args = [p1.text, p2.text].filter(Boolean).join(' · ');
-  return { title: name, subtitle: args };
+  return {
+    title: name,
+    subtitle: args.join(' · '),
+    detail: args.length ? `${name} · ${args.join(' · ')}` : name,
+  };
 }
 
 function geometry(keys: KeyPhysicalAttrs[]) {
@@ -126,6 +138,19 @@ function shorten(value: string, max: number) {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 }
 
+function splitTwoLines(value: string, maxPerLine: number) {
+  if (value.length <= maxPerLine) return [value];
+  const words = value.split(/([ +/·-])/).filter(Boolean);
+  let first = '';
+  let second = '';
+  for (const word of words) {
+    if (!second && (first + word).length <= maxPerLine) first += word;
+    else second += word;
+  }
+  if (!second) return [shorten(value, maxPerLine)];
+  return [first.trim(), shorten(second.trim(), maxPerLine)];
+}
+
 function LayerSvg({
   layer,
   layerIndex,
@@ -140,6 +165,8 @@ function LayerSvg({
   svgRef?: React.Ref<SVGSVGElement>;
 }) {
   const g = geometry(keys);
+  const [hovered, setHovered] = useState<HoveredKey | null>(null);
+
   return (
     <svg
       ref={svgRef}
@@ -148,6 +175,7 @@ function LayerSvg({
       width={g.width}
       height={g.height}
       xmlns="http://www.w3.org/2000/svg"
+      onMouseLeave={() => setHovered(null)}
     >
       <rect width="100%" height="100%" fill="#0b1220" />
       <text x={PADDING} y={31} fill="#f8fafc" fontSize="20" fontWeight="700">
@@ -156,6 +184,7 @@ function LayerSvg({
       <text x={PADDING} y={49} fill="#94a3b8" fontSize="11">
         My ZMK Studio · read from firmware
       </text>
+
       {keys.map((key, position) => {
         const x = PADDING + g.u(key.x) * UNIT_PX;
         const y = PADDING + HEADER + g.u(key.y) * UNIT_PX;
@@ -164,17 +193,41 @@ function LayerSvg({
         const rx = PADDING + g.u(key.rx) * UNIT_PX;
         const ry = PADDING + HEADER + g.u(key.ry) * UNIT_PX;
         const label = behaviorLabel(layer.bindings[position], behaviorOptions);
-        const title = shorten(label.title, width < 50 ? 8 : 13);
-        const subtitle = shorten(label.subtitle, width < 50 ? 10 : 18);
+        const maxChars = width < 50 ? 8 : 12;
+        const titleLines = splitTwoLines(label.title, maxChars);
+        const subtitle = shorten(label.subtitle, width < 50 ? 10 : 17);
         const transform = key.r ? `rotate(${key.r} ${rx} ${ry})` : undefined;
+        const titleFontSize = label.title.length <= maxChars ? 11 : 9.5;
+        const centerY = y + height / 2;
+
         return (
-          <g key={position} transform={transform}>
+          <g
+            key={position}
+            transform={transform}
+            className="layer-key-group"
+            onMouseEnter={() => setHovered({
+              position,
+              label,
+              x: x + width / 2,
+              y: y,
+            })}
+          >
             <rect x={x} y={y} width={width} height={height} rx="7" fill="#1e293b" stroke="#475569" strokeWidth="1" />
-            <text x={x + width / 2} y={y + height / 2 - (subtitle ? 4 : -3)} textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="700">
-              {title}
-            </text>
+            {titleLines.map((line, lineIndex) => (
+              <text
+                key={lineIndex}
+                x={x + width / 2}
+                y={centerY - (subtitle ? 7 : 1) + (lineIndex - (titleLines.length - 1) / 2) * 10}
+                textAnchor="middle"
+                fill="#f8fafc"
+                fontSize={titleFontSize}
+                fontWeight="700"
+              >
+                {line}
+              </text>
+            ))}
             {subtitle && (
-              <text x={x + width / 2} y={y + height / 2 + 10} textAnchor="middle" fill="#93c5fd" fontSize="7.5">
+              <text x={x + width / 2} y={centerY + 15} textAnchor="middle" fill="#93c5fd" fontSize="7.5">
                 {subtitle}
               </text>
             )}
@@ -182,6 +235,40 @@ function LayerSvg({
           </g>
         );
       })}
+
+      {hovered && (() => {
+        const popupWidth = Math.min(260, Math.max(150, hovered.label.detail.length * 6.5));
+        const popupHeight = hovered.label.subtitle ? 70 : 54;
+        const px = Math.max(8, Math.min(g.width - popupWidth - 8, hovered.x - popupWidth / 2));
+        const preferredY = hovered.y - popupHeight - 10;
+        const py = preferredY > HEADER ? preferredY : hovered.y + 68;
+        return (
+          <g className="layer-hover-card" pointerEvents="none">
+            <rect
+              x={px}
+              y={py}
+              width={popupWidth}
+              height={popupHeight}
+              rx="9"
+              fill="#020617"
+              stroke="#60a5fa"
+              strokeWidth="1.5"
+              opacity="0.98"
+            />
+            <text x={px + 12} y={py + 20} fill="#94a3b8" fontSize="9">
+              Position {hovered.position}
+            </text>
+            <text x={px + 12} y={py + 39} fill="#f8fafc" fontSize="14" fontWeight="700">
+              {shorten(hovered.label.title, 30)}
+            </text>
+            {hovered.label.subtitle && (
+              <text x={px + 12} y={py + 57} fill="#93c5fd" fontSize="11">
+                {shorten(hovered.label.subtitle, 38)}
+              </text>
+            )}
+          </g>
+        );
+      })()}
     </svg>
   );
 }
