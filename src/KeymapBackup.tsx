@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { call_rpc, type RpcConnection } from '@zmkfirmware/zmk-studio-ts-client';
-import type { BehaviorBinding, Keymap } from '@zmkfirmware/zmk-studio-ts-client/keymap';
+import type { BehaviorBinding, KeyPhysicalAttrs, Keymap } from '@zmkfirmware/zmk-studio-ts-client/keymap';
 
 type BackupFile = {
   format: 'my-zmk-studio-keymap';
@@ -8,6 +8,16 @@ type BackupFile = {
   exportedAt: string;
   keymap: Keymap;
 };
+
+type HoverDiff = {
+  position: number;
+  current: BehaviorBinding;
+  imported: BehaviorBinding;
+  x: number;
+  y: number;
+};
+
+const KEY_UNIT_PX = 46;
 
 function downloadJson(value: unknown, filename: string) {
   const blob = new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' });
@@ -43,11 +53,78 @@ function validateBackup(value: unknown): BackupFile {
   return candidate as BackupFile;
 }
 
+function PhysicalDiffMap({
+  keys,
+  currentBindings,
+  importedBindings,
+}: {
+  keys: KeyPhysicalAttrs[];
+  currentBindings: BehaviorBinding[];
+  importedBindings: BehaviorBinding[];
+}) {
+  const [hovered, setHovered] = useState<HoverDiff | null>(null);
+  const u = (value: number) => value / 100;
+  const maxX = Math.max(...keys.map((key) => u(key.x) + u(key.width)));
+  const maxY = Math.max(...keys.map((key) => u(key.y) + u(key.height)));
+  const width = Math.ceil(maxX * KEY_UNIT_PX);
+  const height = Math.ceil(maxY * KEY_UNIT_PX);
+
+  return (
+    <div className="backup-keymap-map-scroll">
+      <div className="backup-keymap-map" style={{ width, height }} onMouseLeave={() => setHovered(null)}>
+        {keys.map((key, position) => {
+          const current = currentBindings[position];
+          const imported = importedBindings[position];
+          if (!current || !imported) return null;
+          const changed = !sameBinding(current, imported);
+          const left = u(key.x) * KEY_UNIT_PX;
+          const top = u(key.y) * KEY_UNIT_PX;
+          const keyWidth = Math.max(30, u(key.width) * KEY_UNIT_PX - 3);
+          const keyHeight = Math.max(30, u(key.height) * KEY_UNIT_PX - 3);
+
+          return (
+            <button
+              key={position}
+              type="button"
+              className={`backup-keymap-key ${changed ? 'changed' : 'same'}`}
+              style={{ left, top, width: keyWidth, height: keyHeight }}
+              onMouseEnter={() => setHovered({
+                position,
+                current,
+                imported,
+                x: left + keyWidth / 2,
+                y: top,
+              })}
+              title={changed ? `Position ${position}: changed` : `Position ${position}: unchanged`}
+            >
+              <span>{position}</span>
+              {changed && <strong>Δ</strong>}
+            </button>
+          );
+        })}
+
+        {hovered && (
+          <div
+            className={`backup-keymap-tooltip ${sameBinding(hovered.current, hovered.imported) ? 'same' : 'changed'}`}
+            style={{ left: Math.max(8, Math.min(width - 300, hovered.x - 145)), top: Math.max(8, hovered.y - 94) }}
+          >
+            <strong>Position {hovered.position}</strong>
+            <div><span>Current</span><code>{bindingText(hovered.current)}</code></div>
+            <div><span>Import</span><code>{bindingText(hovered.imported)}</code></div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function KeymapBackup({
   connection,
+  physicalKeys,
   onDebug,
 }: {
   connection: RpcConnection;
+  physicalKeys: KeyPhysicalAttrs[] | null;
   onDebug: (event: string, detail?: unknown) => void;
 }) {
   const [current, setCurrent] = useState<Keymap | null>(null);
@@ -260,7 +337,7 @@ export default function KeymapBackup({
             {pending.keymap.layers.map((layer, index) => (
               <button
                 key={layer.id}
-                className={`layer-tab ${previewLayer === index ? 'active' : ''}`}
+                className={`layer-tab ${previewLayer === index ? 'active' : ''} ${diff.byLayer[index] > 0 ? 'has-diff' : ''}`}
                 onClick={() => setPreviewLayer(index)}
               >
                 <strong>{index}</strong>
@@ -293,6 +370,23 @@ export default function KeymapBackup({
                 <span>→</span>
                 <code>{importLayer.name || '(empty)'}</code>
               </div>
+            )}
+
+            {liveLayer && importLayer && physicalKeys?.length ? (
+              <div className="backup-physical-diff">
+                <div className="backup-physical-diff-heading">
+                  <strong>Physical layout diff</strong>
+                  <span><i className="diff-swatch changed" /> Changed</span>
+                  <span><i className="diff-swatch same" /> Same</span>
+                </div>
+                <PhysicalDiffMap
+                  keys={physicalKeys}
+                  currentBindings={liveLayer.bindings}
+                  importedBindings={importLayer.bindings}
+                />
+              </div>
+            ) : (
+              <div className="backup-no-diff">Physical layout is unavailable for this firmware.</div>
             )}
 
             <div className="backup-diff-table-wrap">
