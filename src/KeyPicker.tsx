@@ -4,6 +4,7 @@ import type { BehaviorOption } from './useStudioCore';
 import BehaviorParamEditor from './BehaviorParamEditor';
 
 type PickerLayout = 'US' | 'JP';
+type BindingCategory = 'keyboard' | 'mouse' | 'media' | 'layers' | 'bluetooth' | 'other';
 
 type KeyChoice = {
   label: string;
@@ -14,6 +15,15 @@ type KeyChoice = {
 };
 
 const LAYOUT_STORAGE_KEY = 'my-zmk-studio-key-picker-layout';
+
+const CATEGORIES: Array<{ id: BindingCategory; label: string }> = [
+  { id: 'keyboard', label: 'Keyboard' },
+  { id: 'mouse', label: 'Mouse' },
+  { id: 'media', label: 'Media' },
+  { id: 'layers', label: 'Layers' },
+  { id: 'bluetooth', label: 'Bluetooth' },
+  { id: 'other', label: 'Other' },
+];
 
 const key = (label: string, usage: number, units = 1, secondary?: string): KeyChoice => ({ label, page: 0x07, usage, units, secondary });
 
@@ -67,6 +77,21 @@ function findKeyPressBehavior(options: BehaviorOption[] | null) {
   return options.find((option) => /key\s*press|keypress/i.test(option.displayName));
 }
 
+function behaviorCategory(option: BehaviorOption): BindingCategory {
+  const name = option.displayName.toLowerCase();
+  if (/mouse|pointer|scroll|wheel|move/.test(name)) return 'mouse';
+  if (/bluetooth|\bbt\b/.test(name)) return 'bluetooth';
+  if (/layer|momentary|toggle.*layer|to layer/.test(name)) return 'layers';
+  if (/media|consumer|volume|play|mute|next|previous/.test(name)) return 'media';
+  if (/key\s*press|keypress/.test(name)) return 'keyboard';
+  return 'other';
+}
+
+function categoryForBinding(binding: BehaviorBinding, options: BehaviorOption[] | null): BindingCategory {
+  const option = options?.find((item) => item.id === binding.behaviorId);
+  return option ? behaviorCategory(option) : 'keyboard';
+}
+
 function loadLayout(): PickerLayout {
   try { return window.localStorage.getItem(LAYOUT_STORAGE_KEY) === 'JP' ? 'JP' : 'US'; }
   catch { return 'US'; }
@@ -88,6 +113,33 @@ function KeyboardKey({ choice, onChoose, disabled }: { choice: KeyChoice; onChoo
   );
 }
 
+function BehaviorCards({
+  options,
+  selectedId,
+  onSelect,
+}: {
+  options: BehaviorOption[];
+  selectedId: number;
+  onSelect: (option: BehaviorOption) => void;
+}) {
+  if (!options.length) return <div className="binding-category-empty">No behaviors in this category.</div>;
+  return (
+    <div className="binding-behavior-grid">
+      {options.map((option) => (
+        <button
+          type="button"
+          key={option.id}
+          className={`binding-behavior-card ${selectedId === option.id ? 'active' : ''}`}
+          onClick={() => onSelect(option)}
+        >
+          <strong>{option.displayName}</strong>
+          <small>Behavior #{option.id}</small>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function KeyPicker({
   position,
   currentBinding,
@@ -96,7 +148,7 @@ export default function KeyPicker({
   onChooseBinding,
   onCancel,
   contextLabel,
-  title = 'Choose a key',
+  title = 'Choose output',
   description,
 }: {
   position?: number;
@@ -109,18 +161,25 @@ export default function KeyPicker({
   title?: string;
   description?: string;
 }) {
-  const [advanced, setAdvanced] = useState(false);
   const [layout, setLayout] = useState<PickerLayout>(loadLayout);
-  const [advancedBinding, setAdvancedBinding] = useState<BehaviorBinding>({ ...currentBinding });
+  const [binding, setBinding] = useState<BehaviorBinding>({ ...currentBinding });
+  const [category, setCategory] = useState<BindingCategory>(() => categoryForBinding(currentBinding, behaviorOptions));
   const keyPressBehavior = useMemo(() => findKeyPressBehavior(behaviorOptions), [behaviorOptions]);
   const selectedBehavior = useMemo(
-    () => behaviorOptions?.find((option) => option.id === advancedBinding.behaviorId),
-    [behaviorOptions, advancedBinding.behaviorId],
+    () => behaviorOptions?.find((option) => option.id === binding.behaviorId),
+    [behaviorOptions, binding.behaviorId],
   );
+  const grouped = useMemo(() => {
+    const result: Record<BindingCategory, BehaviorOption[]> = {
+      keyboard: [], mouse: [], media: [], layers: [], bluetooth: [], other: [],
+    };
+    for (const option of behaviorOptions ?? []) result[behaviorCategory(option)].push(option);
+    return result;
+  }, [behaviorOptions]);
   const rows = layout === 'JP' ? JP_ROWS : US_ROWS;
   const label = contextLabel ?? (position === undefined ? 'Choose binding' : `Editing position ${position}`);
 
-  function choose(choice: KeyChoice) {
+  function chooseKey(choice: KeyChoice) {
     if (!keyPressBehavior) return;
     onChooseBinding({ behaviorId: keyPressBehavior.id, param1: encodedUsage(choice), param2: 0 });
   }
@@ -130,73 +189,100 @@ export default function KeyPicker({
     try { window.localStorage.setItem(LAYOUT_STORAGE_KEY, next); } catch { /* keep in memory */ }
   }
 
+  function selectBehavior(option: BehaviorOption) {
+    setBinding({ behaviorId: option.id, param1: 0, param2: 0 });
+  }
+
+  const showBehaviorEditor = category !== 'keyboard' && selectedBehavior && behaviorCategory(selectedBehavior) === category;
+
   return (
-    <section className="panel key-picker-panel">
+    <section className="panel key-picker-panel binding-picker-panel">
       <div className="key-picker-heading">
         <div>
           <span>{label}</span>
           <h3>{title}</h3>
-          <p>{description ?? `Select a key from a standard ${layout === 'JP' ? 'Japanese JIS' : 'US ANSI'} layout.`}</p>
+          <p>{description ?? 'Choose a category, then select the output or behavior.'}</p>
         </div>
         <div className="key-picker-heading-actions">
-          {!advanced && (
+          {category === 'keyboard' && (
             <div className="key-layout-toggle" role="group" aria-label="Keyboard layout">
               <button type="button" className={layout === 'US' ? 'active' : ''} onClick={() => changeLayout('US')}>US</button>
               <button type="button" className={layout === 'JP' ? 'active' : ''} onClick={() => changeLayout('JP')}>JP</button>
             </div>
           )}
-          <button type="button" className="button secondary" onClick={() => setAdvanced((value) => !value)}>{advanced ? 'Keyboard' : 'Advanced'}</button>
           <button type="button" className="button secondary" onClick={onCancel}>Cancel</button>
         </div>
       </div>
 
-      {!keyPressBehavior && <div className="notice">Key Press behavior metadata is unavailable. Use Advanced editing.</div>}
+      <div className="binding-category-tabs" role="tablist" aria-label="Binding category">
+        {CATEGORIES.map((item) => (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={category === item.id}
+            key={item.id}
+            className={category === item.id ? 'active' : ''}
+            onClick={() => setCategory(item.id)}
+          >
+            {item.label}
+            {item.id !== 'keyboard' && grouped[item.id].length > 0 && <small>{grouped[item.id].length}</small>}
+          </button>
+        ))}
+      </div>
 
-      {!advanced ? (
+      {category === 'keyboard' ? (
         <>
+          {!keyPressBehavior && <div className="notice">Key Press behavior metadata is unavailable.</div>}
           <div className={`standard-keyboard-picker layout-${layout.toLowerCase()}`}>
             {rows.map((row, rowIndex) => (
               <div className="standard-keyboard-row" key={`${layout}:${rowIndex}`}>
                 {row.map((choice, choiceIndex) => (
-                  <KeyboardKey key={`${choice.page}:${choice.usage}:${choiceIndex}`} choice={choice} onChoose={choose} disabled={busy || !keyPressBehavior} />
+                  <KeyboardKey key={`${choice.page}:${choice.usage}:${choiceIndex}`} choice={choice} onChoose={chooseKey} disabled={busy || !keyPressBehavior} />
                 ))}
               </div>
             ))}
           </div>
-          <div className="key-picker-extra">
-            <span>Media</span>
+        </>
+      ) : category === 'media' ? (
+        <>
+          <div className="binding-quick-section">
+            <div className="binding-quick-heading"><strong>Media keys</strong><span>Quick choices</span></div>
             <div className="key-picker-extra-keys">
-              {MEDIA.map((choice) => <KeyboardKey key={`${choice.page}:${choice.usage}`} choice={choice} onChoose={choose} disabled={busy || !keyPressBehavior} />)}
+              {MEDIA.map((choice) => <KeyboardKey key={`${choice.page}:${choice.usage}`} choice={choice} onChoose={chooseKey} disabled={busy || !keyPressBehavior} />)}
             </div>
+          </div>
+          <div className="binding-behavior-section">
+            <div className="binding-quick-heading"><strong>Media behaviors</strong><span>Firmware behaviors</span></div>
+            <BehaviorCards options={grouped.media} selectedId={binding.behaviorId} onSelect={selectBehavior} />
           </div>
         </>
       ) : (
-        <div className="key-picker-advanced metadata-advanced">
-          <label className="behavior-select-field">Behavior
-            {behaviorOptions?.length ? (
-              <select value={advancedBinding.behaviorId} onChange={(event) => setAdvancedBinding({ behaviorId: Number(event.target.value), param1: 0, param2: 0 })}>
-                {!behaviorOptions.some((option) => option.id === advancedBinding.behaviorId) && <option value={advancedBinding.behaviorId}>Unknown behavior (#{advancedBinding.behaviorId})</option>}
-                {behaviorOptions.map((option) => <option key={option.id} value={option.id}>{option.displayName} (#{option.id})</option>)}
-              </select>
-            ) : <input type="number" value={advancedBinding.behaviorId} onChange={(event) => setAdvancedBinding({ ...advancedBinding, behaviorId: Number(event.target.value) })} />}
-          </label>
+        <div className="binding-behavior-section">
+          <BehaviorCards options={grouped[category]} selectedId={binding.behaviorId} onSelect={selectBehavior} />
+        </div>
+      )}
 
-          {selectedBehavior && <div className="behavior-selected-name">{selectedBehavior.displayName}</div>}
-
-          <BehaviorParamEditor
-            option={selectedBehavior}
-            param={1}
-            value={advancedBinding.param1}
-            onChange={(param1) => setAdvancedBinding({ ...advancedBinding, param1 })}
-          />
-          <BehaviorParamEditor
-            option={selectedBehavior}
-            param={2}
-            value={advancedBinding.param2}
-            onChange={(param2) => setAdvancedBinding({ ...advancedBinding, param2 })}
-          />
-
-          <button type="button" className="button metadata-use-binding" disabled={busy} onClick={() => onChooseBinding(advancedBinding)}>
+      {showBehaviorEditor && (
+        <div className="binding-parameter-editor">
+          <div className="binding-selected-behavior">
+            <div><span>Selected behavior</span><strong>{selectedBehavior.displayName}</strong></div>
+            <code>#{selectedBehavior.id}</code>
+          </div>
+          <div className="binding-param-grid">
+            <BehaviorParamEditor
+              option={selectedBehavior}
+              param={1}
+              value={binding.param1}
+              onChange={(param1) => setBinding({ ...binding, param1 })}
+            />
+            <BehaviorParamEditor
+              option={selectedBehavior}
+              param={2}
+              value={binding.param2}
+              onChange={(param2) => setBinding({ ...binding, param2 })}
+            />
+          </div>
+          <button type="button" className="button metadata-use-binding" disabled={busy} onClick={() => onChooseBinding(binding)}>
             {busy ? 'Applying…' : 'Use this binding'}
           </button>
         </div>
