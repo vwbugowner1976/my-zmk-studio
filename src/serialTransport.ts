@@ -1,4 +1,23 @@
-import type { RpcTransport } from '@zmkfirmware/zmk-studio-ts-client/transport';
+type RpcTransport = {
+  label: string;
+  abortController: AbortController;
+  readable: ReadableStream<Uint8Array>;
+  writable: WritableStream<Uint8Array>;
+};
+
+type SerialPortLike = {
+  open(options: { baudRate: number }): Promise<void>;
+  close(): Promise<void>;
+  getInfo(): { usbVendorId?: number; usbProductId?: number };
+  readable: ReadableStream<Uint8Array> | null;
+  writable: WritableStream<Uint8Array> | null;
+};
+
+type SerialNavigator = Navigator & {
+  serial: {
+    requestPort(options?: Record<string, never>): Promise<SerialPortLike>;
+  };
+};
 
 export type ClosableRpcTransport = RpcTransport & {
   close: () => Promise<void>;
@@ -6,7 +25,7 @@ export type ClosableRpcTransport = RpcTransport & {
 
 export async function connectSerial(): Promise<ClosableRpcTransport> {
   const abortController = new AbortController();
-  const port = await navigator.serial.requestPort({});
+  const port = await (navigator as SerialNavigator).serial.requestPort({});
 
   try {
     await port.open({ baudRate: 12500 });
@@ -29,9 +48,6 @@ export async function connectSerial(): Promise<ClosableRpcTransport> {
     if (closePromise) return closePromise;
 
     closePromise = (async () => {
-      // The RPC pipeline owns the stream locks while connected. Its AbortSignal
-      // is stopped first by App.tsx. Once those locks unwind, cancel/close the
-      // underlying Web Serial streams and finally await port.close().
       for (let attempt = 0; attempt < 20; attempt += 1) {
         const readableLocked = port.readable?.locked ?? false;
         const writableLocked = port.writable?.locked ?? false;
@@ -58,8 +74,6 @@ export async function connectSerial(): Promise<ClosableRpcTransport> {
       try {
         await port.close();
       } catch (error) {
-        // A pipeline teardown can race with port.close(). Retry briefly once
-        // locks have fully released rather than leaving the device busy.
         for (let attempt = 0; attempt < 20; attempt += 1) {
           if (!(port.readable?.locked ?? false) && !(port.writable?.locked ?? false)) {
             try {
@@ -88,11 +102,15 @@ export async function connectSerial(): Promise<ClosableRpcTransport> {
     { once: true },
   );
 
+  if (!port.readable || !port.writable) {
+    throw new Error('Serial port opened without readable/writable streams.');
+  }
+
   return {
     label,
     abortController,
-    readable: port.readable!,
-    writable: port.writable!,
+    readable: port.readable,
+    writable: port.writable,
     close,
   };
 }
