@@ -1,6 +1,7 @@
 import { useMemo, useState, type CSSProperties } from 'react';
 import type { BehaviorBinding } from '@zmkfirmware/zmk-studio-ts-client/keymap';
 import type { BehaviorOption } from './useStudioCore';
+import BehaviorParamEditor from './BehaviorParamEditor';
 
 type PickerLayout = 'US' | 'JP';
 
@@ -14,13 +15,7 @@ type KeyChoice = {
 
 const LAYOUT_STORAGE_KEY = 'my-zmk-studio-key-picker-layout';
 
-const key = (label: string, usage: number, units = 1, secondary?: string): KeyChoice => ({
-  label,
-  page: 0x07,
-  usage,
-  units,
-  secondary,
-});
+const key = (label: string, usage: number, units = 1, secondary?: string): KeyChoice => ({ label, page: 0x07, usage, units, secondary });
 
 const letters: Record<string, number> = Object.fromEntries(
   Array.from({ length: 26 }, (_, index) => [String.fromCharCode(65 + index), 4 + index]),
@@ -73,18 +68,11 @@ function findKeyPressBehavior(options: BehaviorOption[] | null) {
 }
 
 function loadLayout(): PickerLayout {
-  try {
-    return window.localStorage.getItem(LAYOUT_STORAGE_KEY) === 'JP' ? 'JP' : 'US';
-  } catch {
-    return 'US';
-  }
+  try { return window.localStorage.getItem(LAYOUT_STORAGE_KEY) === 'JP' ? 'JP' : 'US'; }
+  catch { return 'US'; }
 }
 
-function KeyboardKey({ choice, onChoose, disabled }: {
-  choice: KeyChoice;
-  onChoose: (choice: KeyChoice) => void;
-  disabled: boolean;
-}) {
+function KeyboardKey({ choice, onChoose, disabled }: { choice: KeyChoice; onChoose: (choice: KeyChoice) => void; disabled: boolean }) {
   return (
     <button
       type="button"
@@ -125,6 +113,10 @@ export default function KeyPicker({
   const [layout, setLayout] = useState<PickerLayout>(loadLayout);
   const [advancedBinding, setAdvancedBinding] = useState<BehaviorBinding>({ ...currentBinding });
   const keyPressBehavior = useMemo(() => findKeyPressBehavior(behaviorOptions), [behaviorOptions]);
+  const selectedBehavior = useMemo(
+    () => behaviorOptions?.find((option) => option.id === advancedBinding.behaviorId),
+    [behaviorOptions, advancedBinding.behaviorId],
+  );
   const rows = layout === 'JP' ? JP_ROWS : US_ROWS;
   const label = contextLabel ?? (position === undefined ? 'Choose binding' : `Editing position ${position}`);
 
@@ -179,8 +171,8 @@ export default function KeyPicker({
           </div>
         </>
       ) : (
-        <div className="key-picker-advanced">
-          <label>Behavior
+        <div className="key-picker-advanced metadata-advanced">
+          <label className="behavior-select-field">Behavior
             {behaviorOptions?.length ? (
               <select value={advancedBinding.behaviorId} onChange={(event) => setAdvancedBinding({ behaviorId: Number(event.target.value), param1: 0, param2: 0 })}>
                 {!behaviorOptions.some((option) => option.id === advancedBinding.behaviorId) && <option value={advancedBinding.behaviorId}>Unknown behavior (#{advancedBinding.behaviorId})</option>}
@@ -188,9 +180,25 @@ export default function KeyPicker({
               </select>
             ) : <input type="number" value={advancedBinding.behaviorId} onChange={(event) => setAdvancedBinding({ ...advancedBinding, behaviorId: Number(event.target.value) })} />}
           </label>
-          <label>Param 1<input type="number" value={advancedBinding.param1} onChange={(event) => setAdvancedBinding({ ...advancedBinding, param1: Number(event.target.value) })} /></label>
-          <label>Param 2<input type="number" value={advancedBinding.param2} onChange={(event) => setAdvancedBinding({ ...advancedBinding, param2: Number(event.target.value) })} /></label>
-          <button type="button" className="button" disabled={busy} onClick={() => onChooseBinding(advancedBinding)}>{busy ? 'Applying…' : 'Use this binding'}</button>
+
+          {selectedBehavior && <div className="behavior-selected-name">{selectedBehavior.displayName}</div>}
+
+          <BehaviorParamEditor
+            option={selectedBehavior}
+            param={1}
+            value={advancedBinding.param1}
+            onChange={(param1) => setAdvancedBinding({ ...advancedBinding, param1 })}
+          />
+          <BehaviorParamEditor
+            option={selectedBehavior}
+            param={2}
+            value={advancedBinding.param2}
+            onChange={(param2) => setAdvancedBinding({ ...advancedBinding, param2 })}
+          />
+
+          <button type="button" className="button metadata-use-binding" disabled={busy} onClick={() => onChooseBinding(advancedBinding)}>
+            {busy ? 'Applying…' : 'Use this binding'}
+          </button>
         </div>
       )}
     </section>
