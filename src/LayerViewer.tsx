@@ -23,6 +23,8 @@ const KEYBOARD_USAGE: Record<number, string> = {
   81: 'Down', 82: 'Up', 83: 'Num Lock', 84: 'KP /', 85: 'KP *', 86: 'KP -',
   87: 'KP +', 88: 'KP Enter', 89: 'KP 1', 90: 'KP 2', 91: 'KP 3', 92: 'KP 4',
   93: 'KP 5', 94: 'KP 6', 95: 'KP 7', 96: 'KP 8', 97: 'KP 9', 98: 'KP 0', 99: 'KP .',
+  224: 'LCtrl', 225: 'LShift', 226: 'LAlt', 227: 'LGUI',
+  228: 'RCtrl', 229: 'RShift', 230: 'RAlt', 231: 'RGUI',
 };
 
 const CONSUMER_USAGE: Record<number, string> = {
@@ -50,7 +52,7 @@ function decodeHidUsage(value: number) {
   const modifiers = (value >>> 24) & 0xff;
   const page = (value >>> 16) & 0xff;
   const usage = value & 0xffff;
-  const modifierNames = ['Ctrl', 'Shift', 'Alt', 'GUI', 'RCtrl', 'RShift', 'RAlt', 'RGUI'];
+  const modifierNames = ['LCtrl', 'LShift', 'LAlt', 'LGUI', 'RCtrl', 'RShift', 'RAlt', 'RGUI'];
   const prefix = modifierNames.filter((_, bit) => modifiers & (1 << bit));
 
   let key: string;
@@ -58,7 +60,11 @@ function decodeHidUsage(value: number) {
   else if (page === 0x0c) key = CONSUMER_USAGE[usage] ?? `Consumer 0x${usage.toString(16).toUpperCase()}`;
   else key = `HID ${page.toString(16).toUpperCase()}:${usage.toString(16).toUpperCase()}`;
 
-  return [...prefix, key].join('+');
+  // ZMK can encode a modifier either as a keyboard usage (E0-E7) or in the
+  // modifier bit field attached to another HID usage. Avoid duplicated labels
+  // if both representations point to the same modifier.
+  const combined = [...prefix, key];
+  return combined.filter((item, index) => combined.indexOf(item) === index).join('+');
 }
 
 function describeFromMetadata(value: number, descriptions: BehaviorParameterValueDescription[]): ParamLabel | null {
