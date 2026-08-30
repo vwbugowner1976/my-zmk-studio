@@ -14,7 +14,7 @@ import {
   type CustomSettingRecord,
   type CustomSettingScalar,
   type CustomSettingValue,
-} from './customSettingsProtocol';
+} from './customSettingsSafeProtocol';
 
 type SubsystemInfo = { index: number; identifier: string };
 
@@ -32,6 +32,7 @@ function subsystemDisplayName(identifier: string | undefined, index: number) {
     cormoran_custom_settings: 'Custom Settings',
     cormoran_rip: 'Runtime Input Processor',
     cormoran_rsr: 'Runtime Sensor Rotation',
+    lotom__pmw3610: 'PMW3610',
     tom_oled__codex_status: 'Tom OLED / Codex Status',
     zmk__battery_history: 'Battery History',
     zmk__settings: 'ZMK Settings',
@@ -244,7 +245,7 @@ export default function CustomSettings({
   async function loadSettings() {
     setLoading(true);
     setError(null);
-    setMessage('Reading settings from firmware…');
+    setMessage('Reading local settings from firmware…');
     receivedRef.current = new Map();
     setSettings([]);
     try {
@@ -256,9 +257,9 @@ export default function CustomSettings({
       const loaded = [...receivedRef.current.values()].sort((a, b) => a.customSubsystemIndex - b.customSubsystemIndex || a.key.localeCompare(b.key));
       setSettings(loaded);
       setMessage(status.affectedCount
-        ? `Loaded ${loaded.length} of ${status.affectedCount} setting notification(s) from ${new Set(loaded.map((item) => item.customSubsystemIndex)).size} subsystem(s).`
-        : 'Firmware currently exposes no Custom Settings values.');
-      onDebug('Custom Settings loaded', { expected: status.affectedCount, received: loaded.length });
+        ? `Loaded ${loaded.length} local setting notification(s) from ${new Set(loaded.map((item) => item.customSubsystemIndex)).size} subsystem(s). Split-peripheral settings are temporarily disabled for stability.`
+        : 'Firmware currently exposes no local Custom Settings values.');
+      onDebug('Custom Settings loaded', { expected: status.affectedCount, received: loaded.length, scope: 'local-only' });
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : String(cause);
       setError(text);
@@ -300,7 +301,7 @@ export default function CustomSettings({
     setError(null);
     try {
       const status = await callCustomSettings(encodeSaveSettingsRequest(), 'save_settings');
-      setMessage(`Saved ${status.affectedCount} setting(s).`);
+      setMessage(`Saved ${status.affectedCount} local setting(s).`);
       await loadSettings();
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : String(cause);
@@ -315,7 +316,7 @@ export default function CustomSettings({
     setError(null);
     try {
       const status = await callCustomSettings(encodeDiscardSettingsRequest(), 'discard_settings');
-      setMessage(`Discarded ${status.affectedCount} staged setting(s).`);
+      setMessage(`Discarded ${status.affectedCount} local staged setting(s).`);
       await loadSettings();
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : String(cause);
@@ -330,7 +331,7 @@ export default function CustomSettings({
       <section className="panel custom-settings-toolbar">
         <div>
           <h3>Custom Settings</h3>
-          <p>Firmware settings grouped by the subsystem that owns them.</p>
+          <p>Firmware settings grouped by the subsystem that owns them. Split-peripheral loading is temporarily disabled because the current relay path can stall the keyboard.</p>
         </div>
         <div className="custom-settings-actions">
           {unsavedCount > 0 && <span className="layer-unsaved-badge">{unsavedCount} staged</span>}
@@ -344,9 +345,9 @@ export default function CustomSettings({
       {message && <div className="status-strip panel"><span>{message}</span></div>}
 
       {loading ? (
-        <div className="panel empty"><div><h3>Reading Custom Settings…</h3><p>Collecting settings and metadata notifications from firmware.</p></div></div>
+        <div className="panel empty"><div><h3>Reading Custom Settings…</h3><p>Collecting local settings and metadata notifications from firmware.</p></div></div>
       ) : grouped.length === 0 ? (
-        <div className="panel empty"><div><h3>No registered settings yet</h3><p>The Custom Settings subsystem is active, but no module currently registers an editable setting. The next step is to expose PMW3610, OLED, or other module values through the registry.</p></div></div>
+        <div className="panel empty"><div><h3>No registered local settings yet</h3><p>The Custom Settings subsystem is active. Split-peripheral settings such as PMW3610 are temporarily not requested until the relay path is fixed.</p></div></div>
       ) : (
         <div className="custom-settings-groups">
           {grouped.map(([ownerIndex, items]) => {
@@ -391,7 +392,7 @@ export default function CustomSettings({
 
       {unsavedCount > 0 && (
         <section className="panel layer-save-strip">
-          <div><strong>Unsaved Custom Settings</strong><span>{unsavedCount} setting(s) are staged in RAM.</span></div>
+          <div><strong>Unsaved Custom Settings</strong><span>{unsavedCount} local setting(s) are staged in RAM.</span></div>
           <div className="layer-save-strip-actions">
             <button className="button secondary" onClick={() => void discardAll()} disabled={busy}>Discard</button>
             <button className="button" onClick={() => void saveAll()} disabled={busy}>Save to firmware</button>
