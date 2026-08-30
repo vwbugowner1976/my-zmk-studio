@@ -1,3 +1,11 @@
+import {
+  encodeDiscardSettingsAllRequest,
+  encodeListSettingsAllRequest,
+  encodeResetSettingsAllRequest,
+  encodeSaveSettingsAllRequest,
+  encodeWriteSettingSplitRequest,
+} from './customSettingsSplitProtocol';
+
 export type CustomSettingScalar =
   | { type: 'int32'; value: number }
   | { type: 'bool'; value: boolean }
@@ -105,20 +113,11 @@ function encodeSettingValue(value: CustomSettingValue) {
 }
 
 export function encodeListSettingsRequest(requireMeta = true) {
-  const inner = [
-    ...bytesField(1, []),
-    ...varintField(2, requireMeta ? 1 : 0, true),
-  ];
-  return new Uint8Array(bytesField(1, inner));
+  return encodeListSettingsAllRequest(requireMeta);
 }
 
 export function encodeWriteSettingRequest(setting: CustomSettingRecord, value: CustomSettingValue) {
-  const inner = [
-    ...bytesField(1, encodeSettingRef(setting.customSubsystemIndex, setting.key)),
-    ...bytesField(2, encodeSettingValue(value)),
-    ...varintField(3, 0, true),
-  ];
-  return new Uint8Array(bytesField(3, inner));
+  return encodeWriteSettingSplitRequest(setting, value);
 }
 
 function encodeScope() {
@@ -126,15 +125,15 @@ function encodeScope() {
 }
 
 export function encodeSaveSettingsRequest() {
-  return new Uint8Array(bytesField(4, encodeScope()));
+  return encodeSaveSettingsAllRequest();
 }
 
 export function encodeDiscardSettingsRequest() {
-  return new Uint8Array(bytesField(5, encodeScope()));
+  return encodeDiscardSettingsAllRequest();
 }
 
 export function encodeResetSettingsRequest() {
-  return new Uint8Array(bytesField(6, encodeScope()));
+  return encodeResetSettingsAllRequest();
 }
 
 class Reader {
