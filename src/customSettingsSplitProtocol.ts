@@ -65,6 +65,14 @@ function encodeScope(customSubsystemIndex: number | null, source: number) {
   return bytesField(1, fields);
 }
 
+function encodePrefixScope(keyPrefix: string, source: number) {
+  const fields = [
+    ...stringField(3, keyPrefix),
+    ...varintField(4, source, true),
+  ];
+  return bytesField(1, fields);
+}
+
 export function encodeListSettingsAllRequest(requireMeta = true) {
   const inner = [
     ...encodeScope(null, CUSTOM_SETTING_SOURCE_ALL),
@@ -73,9 +81,12 @@ export function encodeListSettingsAllRequest(requireMeta = true) {
   return new Uint8Array(bytesField(1, inner));
 }
 
-export function encodeListSettingsForSubsystemAllRequest(customSubsystemIndex: number, requireMeta = true) {
+export function encodeListSettingsForSubsystemAllRequest(_customSubsystemIndex: number, requireMeta = true) {
+  // Keep the relay request tiny. The central converts a subsystem index into the
+  // full identifier string before forwarding, which can exceed the split relay
+  // payload budget. PMW3610's CPI setting is uniquely matched by this short prefix.
   const inner = [
-    ...encodeScope(customSubsystemIndex, CUSTOM_SETTING_SOURCE_ALL),
+    ...encodePrefixScope('c', CUSTOM_SETTING_SOURCE_ALL),
     ...varintField(2, requireMeta ? 1 : 0, true),
   ];
   return new Uint8Array(bytesField(1, inner));
