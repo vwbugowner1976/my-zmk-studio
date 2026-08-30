@@ -22,19 +22,51 @@
   transition: none;
 }
 
-/* When hidden, dock the compact console bar to the bottom edge.
-   Inline drag coordinates stay untouched, so Show restores its previous position. */
+/* Hidden debug console becomes a tiny restore button in the lower-left corner.
+   Inline drag coordinates remain stored so expanding restores the previous position. */
 .global-debug-console.collapsed {
-  left: 50% !important;
+  left: 12px !important;
   top: auto !important;
   right: auto !important;
-  bottom: 0 !important;
-  transform: translateX(-50%) !important;
+  bottom: 12px !important;
+  transform: none !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
   margin: 0;
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
 }
 
 .global-debug-console.collapsed .global-debug-header {
   cursor: default;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  min-height: 0;
+}
+
+.global-debug-console.collapsed .global-debug-title,
+.global-debug-console.collapsed .global-debug-actions > button:not(.global-debug-toggle) {
+  display: none;
+}
+
+.global-debug-console.collapsed .global-debug-actions {
+  display: block;
+}
+
+.global-debug-console.collapsed .global-debug-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 24%);
 }
