@@ -265,16 +265,16 @@ export default function CustomSettings({
     for (const subsystem of targetedSplitSubsystems) {
       const before = receivedRef.current.size;
       await callCustomSettings(
-        encodeListSettingsForSubsystemAllRequest(subsystem.index, true),
+        // Keep the relayed request as small as possible. Metadata can be added
+        // after the split transport path is confirmed stable.
+        encodeListSettingsForSubsystemAllRequest(subsystem.index, false),
         `list_settings(${subsystem.identifier}, split)`,
       );
-      // Peripheral list responses arrive asynchronously through the split relay.
-      // Keep this request scoped to one subsystem and allow a short quiet window
-      // rather than waiting on the central-only affected_count response.
       await new Promise((resolve) => setTimeout(resolve, 600));
       onDebug('Custom Settings split supplement loaded', {
         subsystem: subsystem.identifier,
         received: receivedRef.current.size - before,
+        requireMeta: false,
       });
     }
   }
@@ -413,7 +413,7 @@ export default function CustomSettings({
       <section className="panel custom-settings-toolbar">
         <div>
           <h3>Custom Settings</h3>
-          <p>Firmware settings grouped by subsystem. Split peripherals are queried one subsystem at a time to keep relay traffic small.</p>
+          <p>Firmware settings grouped by subsystem. Split peripherals are queried one small request at a time.</p>
         </div>
         <div className="custom-settings-actions">
           {unsavedCount > 0 && <span className="layer-unsaved-badge">{unsavedCount} staged</span>}
@@ -427,7 +427,7 @@ export default function CustomSettings({
       {message && <div className="status-strip panel"><span>{message}</span></div>}
 
       {loading ? (
-        <div className="panel empty"><div><h3>Reading Custom Settings…</h3><p>Collecting local settings first, then small targeted split-peripheral groups.</p></div></div>
+        <div className="panel empty"><div><h3>Reading Custom Settings…</h3><p>Collecting local settings first, then a minimal split-peripheral probe.</p></div></div>
       ) : grouped.length === 0 ? (
         <div className="panel empty"><div><h3>No registered settings yet</h3><p>The Custom Settings subsystem is active, but no editable setting was returned.</p></div></div>
       ) : (
