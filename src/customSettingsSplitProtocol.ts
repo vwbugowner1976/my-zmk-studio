@@ -58,14 +58,24 @@ function encodeSettingRef(setting: CustomSettingRecord) {
   return fields;
 }
 
-function encodeAllScope() {
-  // SettingScope.source = field 4. UINT32_MAX asks the central to relay to all peripherals.
-  return bytesField(1, varintField(4, CUSTOM_SETTING_SOURCE_ALL, true));
+function encodeScope(customSubsystemIndex: number | null, source: number) {
+  const fields: number[] = [];
+  if (customSubsystemIndex !== null) fields.push(...varintField(1, customSubsystemIndex, true));
+  fields.push(...varintField(4, source, true));
+  return bytesField(1, fields);
 }
 
 export function encodeListSettingsAllRequest(requireMeta = true) {
   const inner = [
-    ...encodeAllScope(),
+    ...encodeScope(null, CUSTOM_SETTING_SOURCE_ALL),
+    ...varintField(2, requireMeta ? 1 : 0, true),
+  ];
+  return new Uint8Array(bytesField(1, inner));
+}
+
+export function encodeListSettingsForSubsystemAllRequest(customSubsystemIndex: number, requireMeta = true) {
+  const inner = [
+    ...encodeScope(customSubsystemIndex, CUSTOM_SETTING_SOURCE_ALL),
     ...varintField(2, requireMeta ? 1 : 0, true),
   ];
   return new Uint8Array(bytesField(1, inner));
@@ -80,14 +90,30 @@ export function encodeWriteSettingSplitRequest(setting: CustomSettingRecord, val
   return new Uint8Array(bytesField(3, inner));
 }
 
+function encodeScopedMutation(requestField: number, customSubsystemIndex: number, source: number) {
+  return new Uint8Array(bytesField(requestField, encodeScope(customSubsystemIndex, source)));
+}
+
+export function encodeSaveSettingsForSourceRequest(customSubsystemIndex: number, source: number) {
+  return encodeScopedMutation(4, customSubsystemIndex, source);
+}
+
+export function encodeDiscardSettingsForSourceRequest(customSubsystemIndex: number, source: number) {
+  return encodeScopedMutation(5, customSubsystemIndex, source);
+}
+
+export function encodeResetSettingsForSourceRequest(customSubsystemIndex: number, source: number) {
+  return encodeScopedMutation(6, customSubsystemIndex, source);
+}
+
 export function encodeSaveSettingsAllRequest() {
-  return new Uint8Array(bytesField(4, encodeAllScope()));
+  return new Uint8Array(bytesField(4, encodeScope(null, CUSTOM_SETTING_SOURCE_ALL)));
 }
 
 export function encodeDiscardSettingsAllRequest() {
-  return new Uint8Array(bytesField(5, encodeAllScope()));
+  return new Uint8Array(bytesField(5, encodeScope(null, CUSTOM_SETTING_SOURCE_ALL)));
 }
 
 export function encodeResetSettingsAllRequest() {
-  return new Uint8Array(bytesField(6, encodeAllScope()));
+  return new Uint8Array(bytesField(6, encodeScope(null, CUSTOM_SETTING_SOURCE_ALL)));
 }
