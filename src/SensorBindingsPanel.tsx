@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { BehaviorBinding } from '@zmkfirmware/zmk-studio-ts-client/keymap';
 import type { BehaviorOption } from './useStudioCore';
 
@@ -17,7 +19,7 @@ function behaviorName(binding: BehaviorBinding, behaviorOptions: BehaviorOption[
   return option?.displayName || `Behavior #${binding.behaviorId}`;
 }
 
-export default function SensorBindingsPanel({
+export function SensorBindingsPanel({
   layerIndex,
   behaviorOptions,
   capability = { supported: false },
@@ -79,5 +81,31 @@ export default function SensorBindingsPanel({
         Planned editor: existing Binding Picker / behavior metadata, staged changes, and the same Save / Discard flow as normal keys.
       </div>
     </section>
+  );
+}
+
+export default function SensorBindingsPortal() {
+  const [host, setHost] = useState<HTMLElement | null>(null);
+  const [layerIndex, setLayerIndex] = useState(0);
+
+  useEffect(() => {
+    function sync() {
+      const viewer = document.querySelector<HTMLElement>('.layer-viewer');
+      setHost(viewer);
+      const active = viewer?.querySelector<HTMLElement>('.layer-tab.active strong');
+      const parsed = Number(active?.textContent ?? '0');
+      setLayerIndex(Number.isFinite(parsed) ? parsed : 0);
+    }
+
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+
+  if (!host) return null;
+  return createPortal(
+    <SensorBindingsPanel layerIndex={layerIndex} behaviorOptions={null} />,
+    host,
   );
 }
