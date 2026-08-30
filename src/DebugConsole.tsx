@@ -45,9 +45,11 @@ function clampPosition(position: Position, element: HTMLElement | null): Positio
 export default function DebugConsole() {
   const [lines, setLines] = useState<string[]>(loadStoredLines);
   const [collapsed, setCollapsed] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [position, setPosition] = useState<Position | null>(loadStoredPosition);
   const panelRef = useRef<HTMLElement | null>(null);
   const dragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null);
+  const copiedTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     const originalInfo = console.info;
@@ -71,6 +73,7 @@ export default function DebugConsole() {
 
     return () => {
       console.info = originalInfo;
+      if (copiedTimerRef.current !== null) window.clearTimeout(copiedTimerRef.current);
     };
   }, []);
 
@@ -99,10 +102,17 @@ export default function DebugConsole() {
 
   async function copyLog() {
     await navigator.clipboard.writeText(lines.join('\n'));
+    setCopied(true);
+    if (copiedTimerRef.current !== null) window.clearTimeout(copiedTimerRef.current);
+    copiedTimerRef.current = window.setTimeout(() => {
+      setCopied(false);
+      copiedTimerRef.current = null;
+    }, 1600);
   }
 
   function clearLog() {
     setLines([]);
+    setCopied(false);
     try {
       window.localStorage.removeItem(STORAGE_KEY);
     } catch {
@@ -170,16 +180,16 @@ export default function DebugConsole() {
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
       >
-        <div>
+        <div className="global-debug-title">
           <strong>Debug Console</strong>
           <span>{lines.length} lines · drag this header to move</span>
         </div>
         <div className="global-debug-actions">
-          <button type="button" onClick={() => setCollapsed((value) => !value)}>
-            {collapsed ? 'Show' : 'Hide'}
+          <button type="button" className="global-debug-toggle" onClick={() => setCollapsed((value) => !value)}>
+            {collapsed ? 'Debug Console' : 'Hide'}
           </button>
           <button type="button" onClick={resetPosition} disabled={!position}>Reset Position</button>
-          <button type="button" onClick={copyLog} disabled={!lines.length}>Copy</button>
+          <button type="button" onClick={() => void copyLog()} disabled={!lines.length}>{copied ? 'Copied!' : 'Copy'}</button>
           <button type="button" onClick={clearLog} disabled={!lines.length}>Clear Log</button>
         </div>
       </div>
