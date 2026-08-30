@@ -76,7 +76,7 @@ function encodePrefixScope(keyPrefix: string, source: number) {
 export function encodeListSettingsAllRequest(requireMeta = true) {
   const inner = [
     ...encodeScope(null, CUSTOM_SETTING_SOURCE_ALL),
-    ...varintField(2, requireMeta ? 1 : 0, true),
+    ...varintField(2, requireMeta ? 1 : 0, requireMeta),
   ];
   return new Uint8Array(bytesField(1, inner));
 }
@@ -87,7 +87,7 @@ export function encodeListSettingsForSubsystemAllRequest(_customSubsystemIndex: 
   // payload budget. PMW3610's CPI setting is uniquely matched by this short prefix.
   const inner = [
     ...encodePrefixScope('c', CUSTOM_SETTING_SOURCE_ALL),
-    ...varintField(2, requireMeta ? 1 : 0, true),
+    ...varintField(2, requireMeta ? 1 : 0, requireMeta),
   ];
   return new Uint8Array(bytesField(1, inner));
 }
