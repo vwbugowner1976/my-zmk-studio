@@ -15,13 +15,20 @@ import {
   type CustomSettingScalar,
   type CustomSettingValue,
 } from './customSettingsSafeProtocol';
+import {
+  encodeDiscardSettingsForSourceRequest,
+  encodeListSettingsForSubsystemAllRequest,
+  encodeSaveSettingsForSourceRequest,
+  encodeWriteSettingSplitRequest,
+} from './customSettingsSplitProtocol';
 
 type SubsystemInfo = { index: number; identifier: string };
 
 const RUNTIME_COMBO_SUBSYSTEM_ID = 'cormoran__runtime_combo';
+const TARGETED_SPLIT_SUBSYSTEM_IDS = new Set(['lotom__pmw3610']);
 
 function settingToken(setting: CustomSettingRecord) {
-  return `${setting.customSubsystemIndex}:${setting.key}:${setting.value?.type === 'array' ? setting.value.index : ''}`;
+  return `${setting.customSubsystemIndex}:${setting.source}:${setting.key}:${setting.value?.type === 'array' ? setting.value.index : ''}`;
 }
 
 function subsystemDisplayName(identifier: string | undefined, index: number) {
@@ -189,6 +196,10 @@ export default function CustomSettings({
     () => new Map(subsystems.map((subsystem) => [subsystem.index, subsystem.identifier])),
     [subsystems],
   );
+  const targetedSplitSubsystems = useMemo(
+    () => subsystems.filter((subsystem) => TARGETED_SPLIT_SUBSYSTEM_IDS.has(subsystem.identifier)),
+    [subsystems],
+  );
   const grouped = useMemo(() => {
     const groups = new Map<number, CustomSettingRecord[]>();
     for (const setting of settings) {
@@ -197,7 +208,7 @@ export default function CustomSettings({
       groups.set(setting.customSubsystemIndex, group);
     }
     for (const group of groups.values()) {
-      group.sort((a, b) => a.key.localeCompare(b.key) || ((a.value?.type === 'array' ? a.value.index : -1) - (b.value?.type === 'array' ? b.value.index : -1)));
+      group.sort((a, b) => a.key.localeCompare(b.key) || a.source - b.source || ((a.value?.type === 'array' ? a.value.index : -1) - (b.value?.type === 'array' ? b.value.index : -1)));
     }
     return [...groups.entries()].sort((a, b) => {
       const aName = subsystemDisplayName(subsystemNames.get(a[0]), a[0]);
@@ -228,12 +239,13 @@ export default function CustomSettings({
         if (!decoded) return;
         const token = settingToken(decoded.setting);
         receivedRef.current.set(token, decoded.setting);
-        setSettings([...receivedRef.current.values()].sort((a, b) => a.customSubsystemIndex - b.customSubsystemIndex || a.key.localeCompare(b.key)));
+        setSettings([...receivedRef.current.values()].sort((a, b) => a.customSubsystemIndex - b.customSubsystemIndex || a.key.localeCompare(b.key) || a.source - b.source));
         onDebug('Custom Settings notification', {
           kind: decoded.kind,
           key: decoded.setting.key,
           owner: decoded.setting.customSubsystemIndex,
           ownerName: subsystemDisplayName(subsystemNames.get(decoded.setting.customSubsystemIndex), decoded.setting.customSubsystemIndex),
+          source: decoded.setting.source,
         });
       } catch (cause) {
         onDebug('Custom Settings notification decode failed', cause instanceof Error ? cause.message : String(cause));
@@ -242,24 +254,51 @@ export default function CustomSettings({
     return unsubscribe;
   }, [connection, customSettingsSubsystemIndex, subsystemNames]);
 
+  async function waitForLocalNotifications(expected: number) {
+    const deadline = performance.now() + 1200;
+    while (receivedRef.current.size < expected && performance.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+
+  async function loadTargetedSplitSettings() {
+    for (const subsystem of targetedSplitSubsystems) {
+      const before = receivedRef.current.size;
+      await callCustomSettings(
+        encodeListSettingsForSubsystemAllRequest(subsystem.index, true),
+        `list_settings(${subsystem.identifier}, split)`,
+      );
+      // Peripheral list responses arrive asynchronously through the split relay.
+      // Keep this request scoped to one subsystem and allow a short quiet window
+      // rather than waiting on the central-only affected_count response.
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      onDebug('Custom Settings split supplement loaded', {
+        subsystem: subsystem.identifier,
+        received: receivedRef.current.size - before,
+      });
+    }
+  }
+
   async function loadSettings() {
     setLoading(true);
     setError(null);
-    setMessage('Reading local settings from firmware…');
+    setMessage('Reading Custom Settings from firmware…');
     receivedRef.current = new Map();
     setSettings([]);
     try {
-      const status = await callCustomSettings(encodeListSettingsRequest(true), 'list_settings');
-      const deadline = performance.now() + 1200;
-      while (receivedRef.current.size < status.affectedCount && performance.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
-      const loaded = [...receivedRef.current.values()].sort((a, b) => a.customSubsystemIndex - b.customSubsystemIndex || a.key.localeCompare(b.key));
+      const status = await callCustomSettings(encodeListSettingsRequest(true), 'list_settings(local)');
+      await waitForLocalNotifications(status.affectedCount);
+      await loadTargetedSplitSettings();
+      const loaded = [...receivedRef.current.values()].sort((a, b) => a.customSubsystemIndex - b.customSubsystemIndex || a.key.localeCompare(b.key) || a.source - b.source);
       setSettings(loaded);
-      setMessage(status.affectedCount
-        ? `Loaded ${loaded.length} local setting notification(s) from ${new Set(loaded.map((item) => item.customSubsystemIndex)).size} subsystem(s). Split-peripheral settings are temporarily disabled for stability.`
-        : 'Firmware currently exposes no local Custom Settings values.');
-      onDebug('Custom Settings loaded', { expected: status.affectedCount, received: loaded.length, scope: 'local-only' });
+      const remoteCount = loaded.filter((item) => item.source !== 0).length;
+      setMessage(`Loaded ${loaded.length} setting notification(s) from ${new Set(loaded.map((item) => item.customSubsystemIndex)).size} subsystem(s)${remoteCount ? `, including ${remoteCount} split-peripheral setting(s)` : ''}.`);
+      onDebug('Custom Settings loaded', {
+        localExpected: status.affectedCount,
+        received: loaded.length,
+        remote: remoteCount,
+        scope: targetedSplitSubsystems.length ? 'local+targeted-split' : 'local-only',
+      });
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : String(cause);
       setError(text);
@@ -281,12 +320,15 @@ export default function CustomSettings({
     setBusy(true);
     setError(null);
     try {
-      await callCustomSettings(encodeWriteSettingRequest(setting, value), `write_setting(${setting.key})`);
+      const payload = setting.source === 0
+        ? encodeWriteSettingRequest(setting, value)
+        : encodeWriteSettingSplitRequest(setting, value);
+      await callCustomSettings(payload, `write_setting(${setting.key}, source=${setting.source})`);
       const token = settingToken(setting);
       const next = { ...setting, value: cloneCustomSettingValue(value), hasUnsavedValue: true };
       receivedRef.current.set(token, next);
-      setSettings([...receivedRef.current.values()].sort((a, b) => a.customSubsystemIndex - b.customSubsystemIndex || a.key.localeCompare(b.key)));
-      setMessage(`${setting.key} staged in RAM.`);
+      setSettings([...receivedRef.current.values()].sort((a, b) => a.customSubsystemIndex - b.customSubsystemIndex || a.key.localeCompare(b.key) || a.source - b.source));
+      setMessage(`${setting.key} staged in RAM on source ${setting.source}.`);
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : String(cause);
       setError(text);
@@ -300,8 +342,28 @@ export default function CustomSettings({
     setBusy(true);
     setError(null);
     try {
-      const status = await callCustomSettings(encodeSaveSettingsRequest(), 'save_settings');
-      setMessage(`Saved ${status.affectedCount} local setting(s).`);
+      const localUnsaved = settings.some((setting) => setting.source === 0 && setting.hasUnsavedValue);
+      let saved = 0;
+      if (localUnsaved) {
+        const status = await callCustomSettings(encodeSaveSettingsRequest(), 'save_settings(local)');
+        saved += status.affectedCount;
+      }
+      const remoteScopes = new Map<string, { customSubsystemIndex: number; source: number }>();
+      for (const setting of settings) {
+        if (!setting.hasUnsavedValue || setting.source === 0) continue;
+        remoteScopes.set(`${setting.customSubsystemIndex}:${setting.source}`, {
+          customSubsystemIndex: setting.customSubsystemIndex,
+          source: setting.source,
+        });
+      }
+      for (const scope of remoteScopes.values()) {
+        const status = await callCustomSettings(
+          encodeSaveSettingsForSourceRequest(scope.customSubsystemIndex, scope.source),
+          `save_settings(owner=${scope.customSubsystemIndex}, source=${scope.source})`,
+        );
+        saved += status.affectedCount;
+      }
+      setMessage(`Save requested for ${saved} local setting(s) plus ${remoteScopes.size} split scope(s).`);
       await loadSettings();
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : String(cause);
@@ -315,8 +377,28 @@ export default function CustomSettings({
     setBusy(true);
     setError(null);
     try {
-      const status = await callCustomSettings(encodeDiscardSettingsRequest(), 'discard_settings');
-      setMessage(`Discarded ${status.affectedCount} local staged setting(s).`);
+      const localUnsaved = settings.some((setting) => setting.source === 0 && setting.hasUnsavedValue);
+      let discarded = 0;
+      if (localUnsaved) {
+        const status = await callCustomSettings(encodeDiscardSettingsRequest(), 'discard_settings(local)');
+        discarded += status.affectedCount;
+      }
+      const remoteScopes = new Map<string, { customSubsystemIndex: number; source: number }>();
+      for (const setting of settings) {
+        if (!setting.hasUnsavedValue || setting.source === 0) continue;
+        remoteScopes.set(`${setting.customSubsystemIndex}:${setting.source}`, {
+          customSubsystemIndex: setting.customSubsystemIndex,
+          source: setting.source,
+        });
+      }
+      for (const scope of remoteScopes.values()) {
+        const status = await callCustomSettings(
+          encodeDiscardSettingsForSourceRequest(scope.customSubsystemIndex, scope.source),
+          `discard_settings(owner=${scope.customSubsystemIndex}, source=${scope.source})`,
+        );
+        discarded += status.affectedCount;
+      }
+      setMessage(`Discard requested for ${discarded} local setting(s) plus ${remoteScopes.size} split scope(s).`);
       await loadSettings();
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : String(cause);
@@ -331,7 +413,7 @@ export default function CustomSettings({
       <section className="panel custom-settings-toolbar">
         <div>
           <h3>Custom Settings</h3>
-          <p>Firmware settings grouped by the subsystem that owns them. Split-peripheral loading is temporarily disabled because the current relay path can stall the keyboard.</p>
+          <p>Firmware settings grouped by subsystem. Split peripherals are queried one subsystem at a time to keep relay traffic small.</p>
         </div>
         <div className="custom-settings-actions">
           {unsavedCount > 0 && <span className="layer-unsaved-badge">{unsavedCount} staged</span>}
@@ -345,9 +427,9 @@ export default function CustomSettings({
       {message && <div className="status-strip panel"><span>{message}</span></div>}
 
       {loading ? (
-        <div className="panel empty"><div><h3>Reading Custom Settings…</h3><p>Collecting local settings and metadata notifications from firmware.</p></div></div>
+        <div className="panel empty"><div><h3>Reading Custom Settings…</h3><p>Collecting local settings first, then small targeted split-peripheral groups.</p></div></div>
       ) : grouped.length === 0 ? (
-        <div className="panel empty"><div><h3>No registered local settings yet</h3><p>The Custom Settings subsystem is active. Split-peripheral settings such as PMW3610 are temporarily not requested until the relay path is fixed.</p></div></div>
+        <div className="panel empty"><div><h3>No registered settings yet</h3><p>The Custom Settings subsystem is active, but no editable setting was returned.</p></div></div>
       ) : (
         <div className="custom-settings-groups">
           {grouped.map(([ownerIndex, items]) => {
@@ -378,7 +460,7 @@ export default function CustomSettings({
                     <div className={`custom-setting-row ${setting.hasUnsavedValue ? 'staged' : ''}`} key={settingToken(setting)}>
                       <div className="custom-setting-info">
                         <div><strong>{setting.key}</strong>{setting.hasUnsavedValue && <span>Staged</span>}</div>
-                        <small>Current: {settingValueText(setting.value)} · source {setting.source}</small>
+                        <small>Current: {settingValueText(setting.value)} · source {setting.source}{setting.source === 0 ? ' (local)' : ' (split peripheral)'}</small>
                       </div>
                       <SettingEditor setting={setting} behaviorOptions={behaviorOptions} busy={busy} onApply={stageSetting} />
                     </div>
@@ -392,7 +474,7 @@ export default function CustomSettings({
 
       {unsavedCount > 0 && (
         <section className="panel layer-save-strip">
-          <div><strong>Unsaved Custom Settings</strong><span>{unsavedCount} local setting(s) are staged in RAM.</span></div>
+          <div><strong>Unsaved Custom Settings</strong><span>{unsavedCount} setting(s) are staged in RAM.</span></div>
           <div className="layer-save-strip-actions">
             <button className="button secondary" onClick={() => void discardAll()} disabled={busy}>Discard</button>
             <button className="button" onClick={() => void saveAll()} disabled={busy}>Save to firmware</button>
