@@ -13,6 +13,7 @@ import LayerViewer from './LayerViewer';
 import KeymapBackup from './KeymapBackup';
 import ComboEditor from './ComboEditor';
 import CustomSettings from './CustomSettings';
+import QmkDevicePanel from './QmkDevicePanel';
 import {
   decodeGetComboResponse,
   decodeGlobalSettingsResponse,
@@ -58,7 +59,11 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('Chrome / Edge Web Serial ready');
   const [activeTool, setActiveTool] = useState<ActiveTool>('runtime-combo');
-  const [menuOpen, setMenuOpen] = useState(() => localStorage.getItem('my-zmk-studio-menu-open') !== 'false');
+  const [menuOpen, setMenuOpen] = useState(() => {
+    const saved = localStorage.getItem('my-keeb-studio-menu-open')
+      ?? localStorage.getItem('my-zmk-studio-menu-open');
+    return saved !== 'false';
+  });
   const rpcAbortRef = useRef<AbortController | null>(null);
 
   const behaviorOptions = useBehaviorOptions(connection);
@@ -82,7 +87,7 @@ export default function App() {
   }, [combos, maxCombos]);
 
   useEffect(() => {
-    localStorage.setItem('my-zmk-studio-menu-open', String(menuOpen));
+    localStorage.setItem('my-keeb-studio-menu-open', String(menuOpen));
   }, [menuOpen]);
 
   useEffect(() => {
@@ -92,7 +97,7 @@ export default function App() {
   function debug(event: string, detail?: unknown) {
     const timestamp = new Date().toISOString().slice(11, 23);
     const suffix = detail === undefined ? '' : ` ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`;
-    console.info(`[MyZMKStudio] ${timestamp} ${event}${suffix}`);
+    console.info(`[MyKeebStudio] ${timestamp} ${event}${suffix}`);
   }
 
   async function callRuntimeCombo(
@@ -192,11 +197,11 @@ export default function App() {
   async function connectUsb() {
     setBusy(true);
     setComboError(null);
-    setMessage('Opening USB serial connection…');
+    setMessage('Opening ZMK USB serial connection…');
     let nextTransport: ClosableRpcTransport | null = null;
     let rpcAbort: AbortController | null = null;
     try {
-      debug('Connect USB requested');
+      debug('Connect ZMK USB requested');
       nextTransport = await connectSerial();
       debug('Serial transport open', { label: nextTransport.label });
       rpcAbort = new AbortController();
@@ -367,12 +372,12 @@ export default function App() {
         <div className="topbar-brand">
           <button className="menu-toggle" type="button" onClick={() => setMenuOpen((value) => !value)} title={menuOpen ? 'Hide menu' : 'Show menu'}>☰</button>
           <div>
-            <div className="eyebrow">ZMK firmware inspector</div>
-            <h1>My ZMK Studio <small className="version-badge">v0.6</small></h1>
+            <div className="eyebrow">Keyboard firmware inspector</div>
+            <h1>My Keeb Studio <small className="version-badge">v0.7</small></h1>
           </div>
         </div>
         <button className={connected ? 'button secondary' : 'button'} onClick={connected ? disconnectUsb : connectUsb} disabled={busy || (!connected && !serialSupported)}>
-          {busy ? 'Working…' : connected ? 'Disconnect' : 'Connect USB'}
+          {busy ? 'Working…' : connected ? 'Disconnect ZMK' : 'Connect ZMK'}
         </button>
       </header>
 
@@ -384,7 +389,7 @@ export default function App() {
               <span className={connected ? 'status online' : 'status'} />
               <div><strong>{connected ? 'ZMK device connected' : 'Not connected'}</strong><small>{message}</small></div>
             </div>
-            <div className="section-title tool-title">Tools</div>
+            <div className="section-title tool-title">ZMK Tools</div>
             <nav className="nav-list tool-nav">
               <button className={`nav-item ${activeTool === 'runtime-combo' ? 'active' : ''}`} onClick={() => setActiveTool('runtime-combo')}>Runtime Combo</button>
               <button className={`nav-item ${activeTool === 'layer-viewer' ? 'active' : ''}`} onClick={() => setActiveTool('layer-viewer')}>Layer Viewer</button>
@@ -399,7 +404,11 @@ export default function App() {
 
         <section className="content">
           <div className="content-header">
-            <div><div className="eyebrow">Read / inspect / edit</div><h2>{connected ? title : 'Connect your keyboard'}</h2><p>{description}</p></div>
+            <div>
+              <div className="eyebrow">Read / inspect / edit</div>
+              <h2>{connected ? title : 'Connect your keyboard'}</h2>
+              <p>{connected ? description : 'Use Web Serial for ZMK Studio, or inspect a QMK / VIA Raw HID interface with WebHID.'}</p>
+            </div>
             {connected && activeTool === 'runtime-combo' && runtimeCombo && (
               <div className="content-header-actions">
                 <button className="button secondary" onClick={refreshCombos} disabled={busy}>Refresh</button>
@@ -411,7 +420,10 @@ export default function App() {
           </div>
 
           {!connected ? (
-            <div className="panel empty"><div><h3>USB connection</h3><p>Connect a ZMK Studio enabled keyboard with Chrome or Edge.</p></div></div>
+            <div>
+              <div className="panel empty"><div><h3>ZMK Studio</h3><p>Connect a ZMK Studio enabled keyboard with desktop Chrome or Edge using the “Connect ZMK” button.</p></div></div>
+              <QmkDevicePanel />
+            </div>
           ) : activeTool === 'layer-viewer' && connection ? (
             <LayerViewer connection={connection} physicalKeys={physicalKeys} behaviorOptions={behaviorOptions} onDebug={debug} />
           ) : activeTool === 'keymap-backup' && connection ? (
