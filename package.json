@@ -1,7 +1,7 @@
 {
-  "name": "my-zmk-studio",
+  "name": "my-keeb-studio",
   "private": true,
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
