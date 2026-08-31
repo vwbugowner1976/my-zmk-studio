@@ -11,10 +11,13 @@ My Keeb Studio started as a ZMK Studio developer/diagnostic companion. The proje
 - Connect to the default QMK Raw HID interface with WebHID
 - Filter on the QMK default Raw HID usage page `0xFF60` and usage `0x61`
 - Show product name, VID, PID, HID collections, and report counts
-- Descriptor inspection is read-only: no Raw HID command is sent automatically
+- Keep descriptor inspection command-free until the user explicitly starts the VIA probe
+- Read VIA protocol version with `GET_PROTOCOL_VERSION (0x01)`
+- For VIA protocol v8+, read the dynamic layer count with `DYNAMIC_KEYMAP_GET_LAYER_COUNT (0x11)`
+- Treat VIA v7 as the legacy four-layer baseline used by the current VIA application
 - Release the WebHID interface cleanly on disconnect or when switching to ZMK
 
-This first QMK step intentionally does not claim that every matching Raw HID device is definitely running QMK or VIA. A later read-only VIA protocol probe and dynamic keymap reader can build on this transport.
+The VIA probe is read-only and explicit. It does not write EEPROM, change keymaps, reset macros, or jump to the bootloader. Matching the QMK Raw HID usage alone is not treated as proof of VIA support; My Keeb Studio only reports VIA after receiving a valid protocol response.
 
 ### ZMK Runtime Combo
 
@@ -88,7 +91,7 @@ npm run build
            ZMK firmware              QMK / VIA candidate
                  |                         |
          ZMK Studio RPC              Raw HID descriptor
-         + Custom RPC                inspection (v0.7)
+         + Custom RPC                + read-only VIA probe
                  |                         |
                  +------------+------------+
                               |
@@ -97,7 +100,6 @@ npm run build
 
 ## Future ideas
 
-- Read-only VIA protocol detection
 - QMK/VIA layer and dynamic-keymap viewer
 - Shared ZMK/QMK keycode presentation
 - Rich keycode names instead of raw numeric parameters
