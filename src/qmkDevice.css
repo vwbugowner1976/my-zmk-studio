@@ -49,7 +49,9 @@
 .qmk-summary-grid small,
 .qmk-collection-row small,
 .qmk-definition-summary small,
-.qmk-keycode-cell small {
+.qmk-keycode-cell small,
+.qmk-source-key small,
+.qmk-encoder-card small {
   color: var(--muted, #9ca3af);
 }
 
@@ -89,6 +91,20 @@
 
 .qmk-file-button input {
   display: none;
+}
+
+.qmk-profile-note {
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  border-radius: 10px;
+  padding: 11px 12px;
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.qmk-profile-note span {
+  color: var(--muted, #9ca3af);
+  font-size: 0.88rem;
 }
 
 .qmk-definition-summary {
@@ -131,6 +147,137 @@
 .qmk-layer-tab.active {
   border-color: rgba(96, 165, 250, 0.8);
   background: rgba(59, 130, 246, 0.15);
+}
+
+.qmk-source-layout {
+  display: grid;
+  gap: 18px;
+}
+
+.qmk-source-note {
+  color: var(--muted, #cbd5e1);
+  font-size: 0.88rem;
+  border-left: 3px solid rgba(148, 163, 184, 0.45);
+  padding: 8px 10px;
+}
+
+.qmk-source-section {
+  display: grid;
+  gap: 9px;
+}
+
+.qmk-source-section h5 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.qmk-source-scroll {
+  display: grid;
+  gap: 7px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.qmk-source-row {
+  display: flex;
+  gap: 7px;
+  min-width: max-content;
+}
+
+.qmk-source-row.compact {
+  justify-content: center;
+  min-width: 0;
+}
+
+.qmk-source-key {
+  width: 82px;
+  min-width: 82px;
+  min-height: 70px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(15, 23, 42, 0.38);
+  display: grid;
+  align-content: center;
+  gap: 4px;
+}
+
+.qmk-source-key strong {
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.qmk-source-key code,
+.qmk-encoder-card code {
+  font-size: 0.7rem;
+  color: var(--muted, #9ca3af);
+}
+
+.qmk-source-key.empty {
+  opacity: 0.45;
+}
+
+.qmk-source-lower {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(420px, 1.2fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.qmk-ambi-cluster {
+  display: grid;
+  justify-content: center;
+  gap: 7px;
+  border: 1px dashed rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.qmk-encoder-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.qmk-encoder-group {
+  display: flex;
+  gap: 8px;
+}
+
+.qmk-encoder-card {
+  width: 150px;
+  min-width: 150px;
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(59, 130, 246, 0.07);
+  display: grid;
+  gap: 8px;
+}
+
+.qmk-encoder-card > span {
+  display: grid;
+  gap: 2px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  padding-top: 6px;
+}
+
+.qmk-encoder-card b {
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.qmk-raw-matrix {
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  padding-top: 12px;
+}
+
+.qmk-raw-matrix summary {
+  cursor: pointer;
+  color: var(--muted, #cbd5e1);
+  margin-bottom: 12px;
 }
 
 .qmk-matrix-scroll {
@@ -203,6 +350,12 @@
   background: rgba(59, 130, 246, 0.08);
   border-radius: 0 8px 8px 0;
   font-size: 0.9rem;
+}
+
+@media (max-width: 1100px) {
+  .qmk-source-lower {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 900px) {
