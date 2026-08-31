@@ -1,4 +1,8 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
+import YamadaWillowLayout, {
+  YAMADA_WILLOW_PROFILE,
+  isYamadaWillowDevice,
+} from './YamadaWillowLayout';
 
 type HidReportInfo = {
   reportId: number;
@@ -97,6 +101,26 @@ function keycodeLabel(value: number) {
     0x002a: 'KC_BSPC',
     0x002b: 'KC_TAB',
     0x002c: 'KC_SPC',
+    0x002d: 'KC_MINS',
+    0x002e: 'KC_EQL',
+    0x002f: 'KC_LBRC',
+    0x0030: 'KC_RBRC',
+    0x0031: 'KC_BSLS',
+    0x0033: 'KC_SCLN',
+    0x0034: 'KC_QUOT',
+    0x0035: 'KC_GRV',
+    0x0036: 'KC_COMM',
+    0x0037: 'KC_DOT',
+    0x0038: 'KC_SLSH',
+    0x004a: 'KC_HOME',
+    0x004c: 'KC_DEL',
+    0x004d: 'KC_END',
+    0x004e: 'KC_PGDN',
+    0x004b: 'KC_PGUP',
+    0x004f: 'KC_RGHT',
+    0x0050: 'KC_LEFT',
+    0x0051: 'KC_DOWN',
+    0x0052: 'KC_UP',
     0x00e0: 'KC_LCTL',
     0x00e1: 'KC_LSFT',
     0x00e2: 'KC_LALT',
@@ -217,10 +241,17 @@ export default function QmkDevicePanel() {
     ),
     [collections],
   );
+  const sourceProfile = device && isYamadaWillowDevice(device.vendorId, device.productId)
+    ? YAMADA_WILLOW_PROFILE
+    : null;
   const viaDetected = protocolVersion !== null;
-  const matrixRows = definition?.matrix?.rows ?? 0;
-  const matrixCols = definition?.matrix?.cols ?? 0;
+  const matrixRows = sourceProfile?.matrix.rows ?? definition?.matrix?.rows ?? 0;
+  const matrixCols = sourceProfile?.matrix.cols ?? definition?.matrix?.cols ?? 0;
   const activeKeymap = layerKeymaps[activeLayer] ?? null;
+  const hasMatrixDefinition = sourceProfile !== null || definition !== null;
+  const effectiveDefinitionName = sourceProfile
+    ? `${sourceProfile.name} · built-in source profile`
+    : definitionName;
 
   useEffect(() => () => {
     if (device?.opened) void device.close();
@@ -270,7 +301,11 @@ export default function QmkDevicePanel() {
       }
       if (!selected.opened) await selected.open();
       setDevice(selected);
-      setMessage('Raw HID interface opened. No VIA command has been sent yet.');
+      if (isYamadaWillowDevice(selected.vendorId, selected.productId)) {
+        setMessage('Yamada Willow detected. Built-in 10×10 source profile is ready; no JSON is required.');
+      } else {
+        setMessage('Raw HID interface opened. No VIA command has been sent yet.');
+      }
     } catch (error) {
       const name = error instanceof DOMException ? error.name : '';
       if (name === 'NotFoundError') {
@@ -341,16 +376,27 @@ export default function QmkDevicePanel() {
       setDefinition(parsed);
       setDefinitionName(parsed.name || file.name);
 
+      const warnings: string[] = [];
       if (device) {
         const defVid = parseUsbId(parsed.vendorId);
         const defPid = parseUsbId(parsed.productId);
         if ((defVid !== null && defVid !== device.vendorId) || (defPid !== null && defPid !== device.productId)) {
-          setDefinitionWarning(
+          warnings.push(
             `Definition VID/PID ${defVid === null ? '?' : hex4(defVid)}:${defPid === null ? '?' : hex4(defPid)} does not match connected device ${hex4(device.vendorId)}:${hex4(device.productId)}.`,
           );
         }
       }
-      setMessage(`Loaded VIA definition “${parsed.name || file.name}” with matrix ${rows}x${cols}.`);
+      if (sourceProfile && (rows !== sourceProfile.matrix.rows || cols !== sourceProfile.matrix.cols)) {
+        warnings.push(
+          `Loaded JSON says ${rows}×${cols}, but the built-in Yamada Willow source profile is ${sourceProfile.matrix.rows}×${sourceProfile.matrix.cols}. The source profile overrides the JSON for keymap reads.`,
+        );
+      }
+      setDefinitionWarning(warnings.length ? warnings.join(' ') : null);
+      setMessage(
+        sourceProfile
+          ? `Loaded “${parsed.name || file.name}”. Yamada Willow source profile remains authoritative at ${sourceProfile.matrix.rows}×${sourceProfile.matrix.cols}.`
+          : `Loaded VIA definition “${parsed.name || file.name}” with matrix ${rows}×${cols}.`,
+      );
     } catch (error) {
       setDefinition(null);
       setDefinitionName(null);
@@ -359,7 +405,7 @@ export default function QmkDevicePanel() {
   }
 
   async function readLayers() {
-    if (!device || protocolVersion === null || !layerCount || !definition) return;
+    if (!device || protocolVersion === null || !layerCount || !hasMatrixDefinition) return;
     if (!matrixRows || !matrixCols) return;
 
     setBusy(true);
@@ -377,7 +423,7 @@ export default function QmkDevicePanel() {
         );
       }
       setLayerKeymaps(loaded);
-      setMessage(`Read ${loaded.length} layer(s), ${matrixRows}x${matrixCols} matrix, without writing firmware state.`);
+      setMessage(`Read ${loaded.length} layer(s), ${matrixRows}×${matrixCols} matrix, without writing firmware state.`);
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error);
       setKeymapError(text);
@@ -406,6 +452,26 @@ export default function QmkDevicePanel() {
     }
   }
 
+  function renderRawMatrix(keymap: number[]) {
+    return (
+      <div className="qmk-matrix-scroll">
+        <div className="qmk-matrix-grid" style={{ gridTemplateColumns: `repeat(${matrixCols}, minmax(78px, 1fr))` }}>
+          {keymap.map((keycode, index) => {
+            const row = Math.floor(index / matrixCols);
+            const col = index % matrixCols;
+            return (
+              <div className={`qmk-keycode-cell ${keycode === 0 ? 'empty' : ''}`} key={`${row}-${col}`}>
+                <small>r{row} c{col}</small>
+                <strong>{keycodeLabel(keycode)}</strong>
+                <code>{hex4(keycode)}</code>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <section className="panel qmk-device-panel">
       <div className="panel-heading qmk-panel-heading">
@@ -414,7 +480,7 @@ export default function QmkDevicePanel() {
           <h3>Raw HID inspector</h3>
           <p>
             Selects only the default QMK Raw HID usage page {hex4(QMK_RAW_USAGE_PAGE)} / usage {hex(QMK_RAW_USAGE)}.
-            After connecting, VIA protocol and keymap reads are explicit read-only actions.
+            VIA protocol and keymap reads are explicit read-only actions.
           </p>
         </div>
         <div className="qmk-actions">
@@ -453,29 +519,40 @@ export default function QmkDevicePanel() {
             <div><small>Raw HID match</small><strong>{rawCollections.length ? 'Yes' : 'Descriptor not exposed'}</strong></div>
             <div><small>VIA protocol</small><strong>{protocolVersion === null ? 'Not probed' : `v${protocolVersion}`}</strong></div>
             <div><small>Dynamic layers</small><strong>{layerCount ?? 'Unknown'}</strong>{layerCountNote && <small>{layerCountNote}</small>}</div>
+            {sourceProfile && <div><small>Source profile</small><strong>{sourceProfile.name}</strong><small>{sourceProfile.matrix.rows}×{sourceProfile.matrix.cols} from QMK source</small></div>}
           </div>
 
           {viaDetected && layerCount && (
             <section className="qmk-definition-box">
               <div className="qmk-definition-heading">
                 <div>
-                  <h4>VIA definition & Layer Viewer</h4>
-                  <p>Load the keyboard's VIA JSON locally so My Keeb Studio knows the matrix rows and columns. The file is not uploaded anywhere.</p>
+                  <h4>Keyboard profile & Layer Viewer</h4>
+                  <p>
+                    {sourceProfile
+                      ? 'A built-in source profile matched this keyboard. JSON is optional and will never override the firmware-verified matrix dimensions.'
+                      : 'Load the keyboard’s VIA/QMK JSON locally so My Keeb Studio knows the matrix rows and columns.'}
+                  </p>
                 </div>
                 <label className="button secondary qmk-file-button">
-                  Load VIA JSON
+                  {sourceProfile ? 'Load JSON (optional)' : 'Load VIA / QMK JSON'}
                   <input type="file" accept="application/json,.json" onChange={(event) => void loadDefinition(event)} />
                 </label>
               </div>
 
+              {sourceProfile && (
+                <div className="qmk-profile-note">
+                  <strong>Yamada Willow source profile detected</strong>
+                  <span>VID/PID match · 10×10 matrix · 4 layers expected from the supplied QMK source.</span>
+                </div>
+              )}
               {definitionError && <div className="notice">Definition: {definitionError}</div>}
               {definitionWarning && <div className="notice">{definitionWarning}</div>}
 
-              {definition && (
+              {hasMatrixDefinition ? (
                 <>
                   <div className="qmk-definition-summary">
-                    <span><small>Definition</small><strong>{definitionName}</strong></span>
-                    <span><small>Matrix</small><strong>{matrixRows} × {matrixCols}</strong></span>
+                    <span><small>Profile / definition</small><strong>{effectiveDefinitionName || 'Loaded definition'}</strong></span>
+                    <span><small>Effective matrix</small><strong>{matrixRows} × {matrixCols}</strong></span>
                     <span><small>Layers</small><strong>{layerCount}</strong></span>
                     <button className="button" type="button" onClick={() => void readLayers()} disabled={busy}>
                       {busy ? 'Reading…' : 'Read all layers (read-only)'}
@@ -485,18 +562,20 @@ export default function QmkDevicePanel() {
                     Protocol v8+ uses DYNAMIC_KEYMAP_GET_BUFFER. VIA v7 falls back to DYNAMIC_KEYMAP_GET_KEYCODE for each matrix position.
                   </small>
                 </>
+              ) : (
+                <div className="qmk-definition-help">No built-in profile matched. Load a VIA/QMK JSON containing matrix.rows and matrix.cols.</div>
               )}
             </section>
           )}
 
           {keymapError && <div className="notice">Layer Viewer: {keymapError}</div>}
 
-          {activeKeymap && definition && (
+          {activeKeymap && (
             <section className="qmk-layer-viewer">
               <div className="qmk-layer-heading">
                 <div>
                   <h4>QMK / VIA Layer Viewer</h4>
-                  <p>Matrix view for now. Physical VIA layout rendering can be layered on next.</p>
+                  <p>{sourceProfile ? 'Source-mapped Yamada Willow view plus the raw diagnostic matrix.' : 'Matrix view from the connected keyboard.'}</p>
                 </div>
                 <div className="qmk-layer-tabs">
                   {layerKeymaps.map((_, index) => (
@@ -511,21 +590,16 @@ export default function QmkDevicePanel() {
                   ))}
                 </div>
               </div>
-              <div className="qmk-matrix-scroll">
-                <div className="qmk-matrix-grid" style={{ gridTemplateColumns: `repeat(${matrixCols}, minmax(78px, 1fr))` }}>
-                  {activeKeymap.map((keycode, index) => {
-                    const row = Math.floor(index / matrixCols);
-                    const col = index % matrixCols;
-                    return (
-                      <div className={`qmk-keycode-cell ${keycode === 0 ? 'empty' : ''}`} key={`${row}-${col}`}>
-                        <small>r{row} c{col}</small>
-                        <strong>{keycodeLabel(keycode)}</strong>
-                        <code>{hex4(keycode)}</code>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+
+              {sourceProfile ? (
+                <>
+                  <YamadaWillowLayout keymap={activeKeymap} keycodeLabel={keycodeLabel} hex4={hex4} />
+                  <details className="qmk-raw-matrix">
+                    <summary>Raw {matrixRows}×{matrixCols} matrix</summary>
+                    {renderRawMatrix(activeKeymap)}
+                  </details>
+                </>
+              ) : renderRawMatrix(activeKeymap)}
             </section>
           )}
 
