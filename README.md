@@ -15,9 +15,17 @@ My Keeb Studio started as a ZMK Studio developer/diagnostic companion. The proje
 - Read VIA protocol version with `GET_PROTOCOL_VERSION (0x01)`
 - For VIA protocol v8+, read the dynamic layer count with `DYNAMIC_KEYMAP_GET_LAYER_COUNT (0x11)`
 - Treat VIA v7 as the legacy four-layer baseline used by the current VIA application
+- Load a VIA definition JSON locally to obtain the keyboard matrix dimensions
+- Read every dynamic layer without modifying firmware state
+  - VIA v8+: `DYNAMIC_KEYMAP_GET_BUFFER (0x12)`
+  - VIA v7: `DYNAMIC_KEYMAP_GET_KEYCODE (0x04)` fallback
+- Display each layer as a row/column matrix with 16-bit QMK keycodes
+- Show common basic keycodes such as `KC_A`, `KC_ENT`, modifiers, `KC_NO`, and `KC_TRNS`
 - Release the WebHID interface cleanly on disconnect or when switching to ZMK
 
-The VIA probe is read-only and explicit. It does not write EEPROM, change keymaps, reset macros, or jump to the bootloader. Matching the QMK Raw HID usage alone is not treated as proof of VIA support; My Keeb Studio only reports VIA after receiving a valid protocol response.
+The VIA probe and Layer Viewer are read-only and explicit. They do not write EEPROM, change keymaps, reset macros, or jump to the bootloader. Matching the QMK Raw HID usage alone is not treated as proof of VIA support; My Keeb Studio only reports VIA after receiving a valid protocol response.
+
+The VIA definition JSON is read locally in the browser and is not uploaded. It currently provides matrix rows and columns for the QMK Layer Viewer. Physical-layout rendering from `layouts.keymap` is planned as the next step.
 
 ### ZMK Runtime Combo
 
@@ -91,7 +99,8 @@ npm run build
            ZMK firmware              QMK / VIA candidate
                  |                         |
          ZMK Studio RPC              Raw HID descriptor
-         + Custom RPC                + read-only VIA probe
+         + Custom RPC                + read-only VIA protocol
+                 |                   + dynamic keymap reads
                  |                         |
                  +------------+------------+
                               |
@@ -100,9 +109,9 @@ npm run build
 
 ## Future ideas
 
-- QMK/VIA layer and dynamic-keymap viewer
-- Shared ZMK/QMK keycode presentation
-- Rich keycode names instead of raw numeric parameters
+- Render QMK/VIA layers using the physical `layouts.keymap` geometry from VIA definitions
+- Expand shared ZMK/QMK keycode names and presentation
+- QMK/VIA keymap editing with explicit write confirmation
 - BLE Management diagnostics
 - PMW3610 diagnostics/settings
 - PAW3222 diagnostics/settings
