@@ -11,6 +11,14 @@
   max-width: 760px;
 }
 
+.qmk-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .qmk-message {
   margin-top: 14px;
   color: var(--muted, #9ca3af);
@@ -88,10 +96,19 @@
     align-items: stretch;
     flex-direction: column;
   }
+
+  .qmk-actions {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 560px) {
   .qmk-summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .qmk-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
