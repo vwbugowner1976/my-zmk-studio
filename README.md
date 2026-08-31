@@ -15,7 +15,7 @@ My Keeb Studio started as a ZMK Studio developer/diagnostic companion. The proje
 - Read VIA protocol version with `GET_PROTOCOL_VERSION (0x01)`
 - For VIA protocol v8+, read the dynamic layer count with `DYNAMIC_KEYMAP_GET_LAYER_COUNT (0x11)`
 - Treat VIA v7 as the legacy four-layer baseline used by the current VIA application
-- Load a VIA definition JSON locally to obtain the keyboard matrix dimensions
+- Load a VIA/QMK JSON locally to obtain matrix dimensions for generic keyboards
 - Read every dynamic layer without modifying firmware state
   - VIA v8+: `DYNAMIC_KEYMAP_GET_BUFFER (0x12)`
   - VIA v7: `DYNAMIC_KEYMAP_GET_KEYCODE (0x04)` fallback
@@ -25,7 +25,22 @@ My Keeb Studio started as a ZMK Studio developer/diagnostic companion. The proje
 
 The VIA probe and Layer Viewer are read-only and explicit. They do not write EEPROM, change keymaps, reset macros, or jump to the bootloader. Matching the QMK Raw HID usage alone is not treated as proof of VIA support; My Keeb Studio only reports VIA after receiving a valid protocol response.
 
-The VIA definition JSON is read locally in the browser and is not uploaded. It currently provides matrix rows and columns for the QMK Layer Viewer. Physical-layout rendering from `layouts.keymap` is planned as the next step.
+JSON files are read locally in the browser and are not uploaded.
+
+### Yamada Willow source profile
+
+`VID 0xFEED / PID 0x1519` is currently the first built-in QMK source profile.
+
+- Auto-detect Yamada Willow from VID/PID
+- Use the firmware source's actual `10 x 10` matrix instead of the older/minimal `11 x 11` JSON value
+- Do not require a JSON file before reading dynamic layers
+- Reconstruct `k01` through `k74` from the keyboard's QMK `LAYOUT` macro
+- Show the source-order Willow rows and Ambi cluster
+- Show the three encoder CCW/CW virtual key bindings
+- Keep the raw `10 x 10` matrix available as a diagnostic view
+- Treat the source profile's matrix dimensions as authoritative even if a loaded JSON disagrees
+
+The matrix-to-key mapping is exact from the supplied QMK source. The source does not contain complete geometry for every key in the center cluster, so that portion is intentionally rendered as a schematic source-order view rather than claiming exact physical x/y placement.
 
 ### ZMK Runtime Combo
 
@@ -101,6 +116,7 @@ npm run build
          ZMK Studio RPC              Raw HID descriptor
          + Custom RPC                + read-only VIA protocol
                  |                   + dynamic keymap reads
+                 |                   + source profiles
                  |                         |
                  +------------+------------+
                               |
@@ -109,7 +125,8 @@ npm run build
 
 ## Future ideas
 
-- Render QMK/VIA layers using the physical `layouts.keymap` geometry from VIA definitions
+- Render generic QMK/VIA layers using physical `layouts.keymap` geometry from VIA definitions
+- Add more firmware/source profiles without coupling them to the WebHID transport
 - Expand shared ZMK/QMK keycode names and presentation
 - QMK/VIA keymap editing with explicit write confirmation
 - BLE Management diagnostics
