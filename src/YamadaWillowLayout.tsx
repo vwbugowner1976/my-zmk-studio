@@ -8,6 +8,12 @@ type SourceKey = {
   matrix: MatrixPosition;
 };
 
+type PositionedKey = {
+  key: SourceKey;
+  x: number;
+  y: number;
+};
+
 type EncoderBinding = {
   id: string;
   ccw: MatrixPosition;
@@ -100,15 +106,22 @@ const KEY_MATRIX: Record<string, MatrixPosition> = {
 };
 
 const sourceKey = (id: string): SourceKey => ({ id, matrix: KEY_MATRIX[id] });
-const range = (start: number, end: number) =>
-  Array.from({ length: end - start + 1 }, (_, index) => sourceKey(`k${String(start + index).padStart(2, '0')}`));
 
-const MAIN_ROWS: SourceKey[][] = [
-  range(1, 12),
-  range(13, 24),
-  range(25, 36),
-  range(37, 50),
-  range(51, 58),
+function positionedRange(start: number, xs: number[], y: number): PositionedKey[] {
+  return xs.map((x, index) => ({
+    key: sourceKey(`k${String(start + index).padStart(2, '0')}`),
+    x,
+    y,
+  }));
+}
+
+// QMK g_led_config physical coordinates for k01-k58.
+const MAIN_GEOMETRY: PositionedKey[] = [
+  ...positionedRange(1, [0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 200, 220], 0),
+  ...positionedRange(13, [0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 200, 220], 16),
+  ...positionedRange(25, [0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 200, 220], 32),
+  ...positionedRange(37, [0, 17, 34, 51, 68, 85, 102, 119, 138, 155, 172, 189, 206, 224], 48),
+  ...positionedRange(51, [51, 68, 85, 102, 119, 138, 155, 172], 64),
 ];
 
 const AMBI_ROWS: SourceKey[][] = [
@@ -152,15 +165,28 @@ export default function YamadaWillowLayout({ keymap, keycodeLabel, hex4 }: Props
   return (
     <div className="qmk-source-layout">
       <div className="qmk-source-note">
-        Source-order view reconstructed from the keyboard's QMK <code>LAYOUT</code> macro. The matrix mapping is exact; the center-cluster spacing is schematic because the supplied source does not contain full key geometry.
+        Matrix mapping comes from the keyboard's QMK <code>LAYOUT</code> macro. Main-key positions k01-k58 use the QMK <code>g_led_config</code> physical coordinates. The center Ambi cluster is schematic because the supplied source does not contain complete x/y geometry for those keys.
       </div>
 
       <div className="qmk-source-section">
-        <h5>Willow key rows</h5>
-        <div className="qmk-source-scroll">
-          {MAIN_ROWS.map((row, index) => (
-            <div className="qmk-source-row" key={`main-${index}`}>{row.map(renderKey)}</div>
-          ))}
+        <h5>Willow key field · QMK physical coordinates</h5>
+        <div className="qmk-willow-canvas-scroll">
+          <div className="qmk-willow-canvas">
+            {MAIN_GEOMETRY.map(({ key, x, y }) => {
+              const value = valueAt(key.matrix);
+              return (
+                <div
+                  className={`qmk-source-key qmk-positioned-key ${value === 0 ? 'empty' : ''}`}
+                  key={key.id}
+                  style={{ left: `${32 + x * 3.6}px`, top: `${30 + y * 3.6}px` }}
+                >
+                  <small>{key.id}</small>
+                  <strong>{keycodeLabel(value)}</strong>
+                  <code>r{key.matrix.row}c{key.matrix.col} · {hex4(value)}</code>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
