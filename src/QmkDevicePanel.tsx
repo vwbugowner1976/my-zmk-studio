@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 
 type HidReportInfo = {
   reportId: number;
@@ -38,14 +38,28 @@ type HidApi = {
   }): Promise<HidDevice[]>;
 };
 
+type ViaDefinition = {
+  name?: string;
+  vendorId?: string | number;
+  productId?: string | number;
+  matrix?: {
+    rows?: number;
+    cols?: number;
+  };
+  layouts?: unknown;
+};
+
 const QMK_RAW_USAGE_PAGE = 0xff60;
 const QMK_RAW_USAGE = 0x61;
 const VIA_REPORT_ID = 0;
 const VIA_REPORT_SIZE = 32;
 const VIA_GET_PROTOCOL_VERSION = 0x01;
+const VIA_GET_KEYCODE = 0x04;
 const VIA_GET_LAYER_COUNT = 0x11;
+const VIA_GET_KEYMAP_BUFFER = 0x12;
 const VIA_PROTOCOL_ALPHA = 7;
 const VIA_PROTOCOL_BETA = 8;
+const VIA_MAX_BUFFER_BYTES = 28;
 
 const hex4 = (value: number) => `0x${value.toString(16).toUpperCase().padStart(4, '0')}`;
 const hex = (value: number) => `0x${value.toString(16).toUpperCase()}`;
@@ -60,6 +74,39 @@ function flattenCollections(collections: HidCollectionInfo[]): HidCollectionInfo
     collection,
     ...flattenCollections(collection.children ?? []),
   ]);
+}
+
+function parseUsbId(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0) return value;
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  if (!text) return null;
+  const parsed = Number.parseInt(text, text.toLowerCase().startsWith('0x') ? 16 : 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function keycodeLabel(value: number) {
+  if (value === 0x0000) return 'KC_NO';
+  if (value === 0x0001) return 'KC_TRNS';
+  if (value >= 0x0004 && value <= 0x001d) return `KC_${String.fromCharCode(65 + value - 0x0004)}`;
+  if (value >= 0x001e && value <= 0x0026) return `KC_${value - 0x001d}`;
+  if (value === 0x0027) return 'KC_0';
+  const known: Record<number, string> = {
+    0x0028: 'KC_ENT',
+    0x0029: 'KC_ESC',
+    0x002a: 'KC_BSPC',
+    0x002b: 'KC_TAB',
+    0x002c: 'KC_SPC',
+    0x00e0: 'KC_LCTL',
+    0x00e1: 'KC_LSFT',
+    0x00e2: 'KC_LALT',
+    0x00e3: 'KC_LGUI',
+    0x00e4: 'KC_RCTL',
+    0x00e5: 'KC_RSFT',
+    0x00e6: 'KC_RALT',
+    0x00e7: 'KC_RGUI',
+  };
+  return known[value] ?? hex4(value);
 }
 
 function viaCommand(
@@ -106,6 +153,42 @@ function viaCommand(
   });
 }
 
+async function readLayerFast(device: HidDevice, layer: number, rows: number, cols: number) {
+  const keyCount = rows * cols;
+  const layerByteSize = keyCount * 2;
+  const bytes: number[] = [];
+
+  for (let localOffset = 0; localOffset < layerByteSize; localOffset += VIA_MAX_BUFFER_BYTES) {
+    const size = Math.min(VIA_MAX_BUFFER_BYTES, layerByteSize - localOffset);
+    const absoluteOffset = layer * layerByteSize + localOffset;
+    const response = await viaCommand(device, VIA_GET_KEYMAP_BUFFER, [
+      (absoluteOffset >> 8) & 0xff,
+      absoluteOffset & 0xff,
+      size,
+    ]);
+    const chunk = Array.from(response.slice(4, 4 + size));
+    if (chunk.length !== size) throw new Error(`Layer ${layer} returned a short keymap buffer.`);
+    bytes.push(...chunk);
+  }
+
+  const keycodes: number[] = [];
+  for (let index = 0; index < bytes.length; index += 2) {
+    keycodes.push(((bytes[index] ?? 0) << 8) | (bytes[index + 1] ?? 0));
+  }
+  return keycodes;
+}
+
+async function readLayerSlow(device: HidDevice, layer: number, rows: number, cols: number) {
+  const keycodes: number[] = [];
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      const response = await viaCommand(device, VIA_GET_KEYCODE, [layer, row, col]);
+      keycodes.push(((response[4] ?? 0) << 8) | (response[5] ?? 0));
+    }
+  }
+  return keycodes;
+}
+
 export default function QmkDevicePanel() {
   const [device, setDevice] = useState<HidDevice | null>(null);
   const [busy, setBusy] = useState(false);
@@ -114,6 +197,13 @@ export default function QmkDevicePanel() {
   const [layerCount, setLayerCount] = useState<number | null>(null);
   const [layerCountNote, setLayerCountNote] = useState<string | null>(null);
   const [probeError, setProbeError] = useState<string | null>(null);
+  const [definition, setDefinition] = useState<ViaDefinition | null>(null);
+  const [definitionName, setDefinitionName] = useState<string | null>(null);
+  const [definitionWarning, setDefinitionWarning] = useState<string | null>(null);
+  const [definitionError, setDefinitionError] = useState<string | null>(null);
+  const [layerKeymaps, setLayerKeymaps] = useState<number[][]>([]);
+  const [activeLayer, setActiveLayer] = useState(0);
+  const [keymapError, setKeymapError] = useState<string | null>(null);
 
   const hidSupported = !!getHidApi();
   const secureContext = typeof window === 'undefined' || window.isSecureContext;
@@ -128,16 +218,34 @@ export default function QmkDevicePanel() {
     [collections],
   );
   const viaDetected = protocolVersion !== null;
+  const matrixRows = definition?.matrix?.rows ?? 0;
+  const matrixCols = definition?.matrix?.cols ?? 0;
+  const activeKeymap = layerKeymaps[activeLayer] ?? null;
 
   useEffect(() => () => {
     if (device?.opened) void device.close();
   }, [device]);
+
+  function resetKeymap() {
+    setLayerKeymaps([]);
+    setActiveLayer(0);
+    setKeymapError(null);
+  }
+
+  function resetDefinition() {
+    setDefinition(null);
+    setDefinitionName(null);
+    setDefinitionWarning(null);
+    setDefinitionError(null);
+    resetKeymap();
+  }
 
   function resetProbe() {
     setProtocolVersion(null);
     setLayerCount(null);
     setLayerCountNote(null);
     setProbeError(null);
+    resetKeymap();
   }
 
   async function connect() {
@@ -149,6 +257,7 @@ export default function QmkDevicePanel() {
 
     setBusy(true);
     resetProbe();
+    resetDefinition();
     setMessage('Choose a QMK / VIA Raw HID device…');
     try {
       const devices = await hid.requestDevice({
@@ -212,6 +321,72 @@ export default function QmkDevicePanel() {
     }
   }
 
+  async function loadDefinition(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setDefinitionError(null);
+    setDefinitionWarning(null);
+    resetKeymap();
+    try {
+      const parsed = JSON.parse(await file.text()) as ViaDefinition;
+      const rows = Number(parsed.matrix?.rows ?? 0);
+      const cols = Number(parsed.matrix?.cols ?? 0);
+      if (!Number.isInteger(rows) || !Number.isInteger(cols) || rows <= 0 || cols <= 0) {
+        throw new Error('Definition does not contain a valid matrix.rows / matrix.cols.');
+      }
+      if (rows * cols > 512) throw new Error(`Matrix ${rows}x${cols} is unexpectedly large.`);
+
+      setDefinition(parsed);
+      setDefinitionName(parsed.name || file.name);
+
+      if (device) {
+        const defVid = parseUsbId(parsed.vendorId);
+        const defPid = parseUsbId(parsed.productId);
+        if ((defVid !== null && defVid !== device.vendorId) || (defPid !== null && defPid !== device.productId)) {
+          setDefinitionWarning(
+            `Definition VID/PID ${defVid === null ? '?' : hex4(defVid)}:${defPid === null ? '?' : hex4(defPid)} does not match connected device ${hex4(device.vendorId)}:${hex4(device.productId)}.`,
+          );
+        }
+      }
+      setMessage(`Loaded VIA definition “${parsed.name || file.name}” with matrix ${rows}x${cols}.`);
+    } catch (error) {
+      setDefinition(null);
+      setDefinitionName(null);
+      setDefinitionError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function readLayers() {
+    if (!device || protocolVersion === null || !layerCount || !definition) return;
+    if (!matrixRows || !matrixCols) return;
+
+    setBusy(true);
+    setKeymapError(null);
+    setLayerKeymaps([]);
+    setActiveLayer(0);
+    try {
+      const loaded: number[][] = [];
+      for (let layer = 0; layer < layerCount; layer += 1) {
+        setMessage(`Reading VIA layer ${layer + 1}/${layerCount} (read-only)…`);
+        loaded.push(
+          protocolVersion >= VIA_PROTOCOL_BETA
+            ? await readLayerFast(device, layer, matrixRows, matrixCols)
+            : await readLayerSlow(device, layer, matrixRows, matrixCols),
+        );
+      }
+      setLayerKeymaps(loaded);
+      setMessage(`Read ${loaded.length} layer(s), ${matrixRows}x${matrixCols} matrix, without writing firmware state.`);
+    } catch (error) {
+      const text = error instanceof Error ? error.message : String(error);
+      setKeymapError(text);
+      setMessage('VIA keymap read failed.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function disconnect() {
     if (!device) return;
     setBusy(true);
@@ -219,11 +394,13 @@ export default function QmkDevicePanel() {
       if (device.opened) await device.close();
       setDevice(null);
       resetProbe();
+      resetDefinition();
       setMessage('QMK / VIA Raw HID interface released.');
     } catch (error) {
       setMessage(`WebHID disconnect warning: ${error instanceof Error ? error.message : String(error)}`);
       setDevice(null);
       resetProbe();
+      resetDefinition();
     } finally {
       setBusy(false);
     }
@@ -237,7 +414,7 @@ export default function QmkDevicePanel() {
           <h3>Raw HID inspector</h3>
           <p>
             Selects only the default QMK Raw HID usage page {hex4(QMK_RAW_USAGE_PAGE)} / usage {hex(QMK_RAW_USAGE)}.
-            After connecting, the VIA probe is an explicit read-only action.
+            After connecting, VIA protocol and keymap reads are explicit read-only actions.
           </p>
         </div>
         <div className="qmk-actions">
@@ -278,6 +455,80 @@ export default function QmkDevicePanel() {
             <div><small>Dynamic layers</small><strong>{layerCount ?? 'Unknown'}</strong>{layerCountNote && <small>{layerCountNote}</small>}</div>
           </div>
 
+          {viaDetected && layerCount && (
+            <section className="qmk-definition-box">
+              <div className="qmk-definition-heading">
+                <div>
+                  <h4>VIA definition & Layer Viewer</h4>
+                  <p>Load the keyboard's VIA JSON locally so My Keeb Studio knows the matrix rows and columns. The file is not uploaded anywhere.</p>
+                </div>
+                <label className="button secondary qmk-file-button">
+                  Load VIA JSON
+                  <input type="file" accept="application/json,.json" onChange={(event) => void loadDefinition(event)} />
+                </label>
+              </div>
+
+              {definitionError && <div className="notice">Definition: {definitionError}</div>}
+              {definitionWarning && <div className="notice">{definitionWarning}</div>}
+
+              {definition && (
+                <>
+                  <div className="qmk-definition-summary">
+                    <span><small>Definition</small><strong>{definitionName}</strong></span>
+                    <span><small>Matrix</small><strong>{matrixRows} × {matrixCols}</strong></span>
+                    <span><small>Layers</small><strong>{layerCount}</strong></span>
+                    <button className="button" type="button" onClick={() => void readLayers()} disabled={busy}>
+                      {busy ? 'Reading…' : 'Read all layers (read-only)'}
+                    </button>
+                  </div>
+                  <small className="qmk-definition-help">
+                    Protocol v8+ uses DYNAMIC_KEYMAP_GET_BUFFER. VIA v7 falls back to DYNAMIC_KEYMAP_GET_KEYCODE for each matrix position.
+                  </small>
+                </>
+              )}
+            </section>
+          )}
+
+          {keymapError && <div className="notice">Layer Viewer: {keymapError}</div>}
+
+          {activeKeymap && definition && (
+            <section className="qmk-layer-viewer">
+              <div className="qmk-layer-heading">
+                <div>
+                  <h4>QMK / VIA Layer Viewer</h4>
+                  <p>Matrix view for now. Physical VIA layout rendering can be layered on next.</p>
+                </div>
+                <div className="qmk-layer-tabs">
+                  {layerKeymaps.map((_, index) => (
+                    <button
+                      key={index}
+                      type="button"
+                      className={`qmk-layer-tab ${activeLayer === index ? 'active' : ''}`}
+                      onClick={() => setActiveLayer(index)}
+                    >
+                      Layer {index}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="qmk-matrix-scroll">
+                <div className="qmk-matrix-grid" style={{ gridTemplateColumns: `repeat(${matrixCols}, minmax(78px, 1fr))` }}>
+                  {activeKeymap.map((keycode, index) => {
+                    const row = Math.floor(index / matrixCols);
+                    const col = index % matrixCols;
+                    return (
+                      <div className={`qmk-keycode-cell ${keycode === 0 ? 'empty' : ''}`} key={`${row}-${col}`}>
+                        <small>r{row} c{col}</small>
+                        <strong>{keycodeLabel(keycode)}</strong>
+                        <code>{hex4(keycode)}</code>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
+          )}
+
           <div className="qmk-collections">
             <h4>HID collections</h4>
             {collections.length ? collections.map((collection, index) => (
@@ -296,7 +547,7 @@ export default function QmkDevicePanel() {
           </div>
 
           <div className="qmk-readonly-note">
-            The VIA probe sends only GET_PROTOCOL_VERSION and, for protocol v8+, DYNAMIC_KEYMAP_GET_LAYER_COUNT. It does not write EEPROM, modify the keymap, or enter the bootloader.
+            VIA access is read-only in this preview. The app uses GET_PROTOCOL_VERSION, GET_LAYER_COUNT, and keymap GET commands only. It does not write EEPROM, modify the keymap, reset macros, or enter the bootloader.
           </div>
         </div>
       )}
