@@ -36,6 +36,11 @@ const CUSTOM_SETTINGS_SUBSYSTEM_ID = 'cormoran_custom_settings';
 type CustomSubsystem = { index: number; identifier: string };
 type ActiveTool = 'runtime-combo' | 'layer-viewer' | 'keymap-backup' | 'custom-settings';
 
+type OptionalCustomProbe = {
+  subsystems: CustomSubsystem[];
+  warning: string | null;
+};
+
 const sourceLabel = (source: number) => {
   if (source === 1) return 'Default';
   if (source === 2) return 'Overridden';
@@ -50,6 +55,7 @@ export default function App() {
   const [transport, setTransport] = useState<ClosableRpcTransport | null>(null);
   const [connection, setConnection] = useState<RpcConnection | null>(null);
   const [subsystems, setSubsystems] = useState<CustomSubsystem[]>([]);
+  const [customProbeWarning, setCustomProbeWarning] = useState<string | null>(null);
   const [combos, setCombos] = useState<RuntimeComboRecord[]>([]);
   const [comboSettings, setComboSettings] = useState<RuntimeComboGlobalSettings | null>(null);
   const [comboError, setComboError] = useState<string | null>(null);
@@ -58,7 +64,7 @@ export default function App() {
   const [physicalKeys, setPhysicalKeys] = useState<KeyPhysicalAttrs[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('Chrome / Edge Web Serial ready');
-  const [activeTool, setActiveTool] = useState<ActiveTool>('runtime-combo');
+  const [activeTool, setActiveTool] = useState<ActiveTool>('layer-viewer');
   const [menuOpen, setMenuOpen] = useState(() => {
     const saved = localStorage.getItem('my-keeb-studio-menu-open')
       ?? localStorage.getItem('my-zmk-studio-menu-open');
@@ -120,18 +126,40 @@ export default function App() {
     }
   }
 
-  async function readPhysicalLayout(nextConnection: RpcConnection) {
+  async function requireStandardStudio(nextConnection: RpcConnection) {
+    debug('RPC -> keymap.getPhysicalLayouts (required standard Studio probe)');
+    const resp = await call_rpc(nextConnection, { keymap: { getPhysicalLayouts: true } });
+    const layouts = resp?.keymap?.getPhysicalLayouts;
+    if (!layouts) {
+      throw new Error(
+        'The selected serial device did not return the standard ZMK Studio physical-layout response. Verify that ZMK Studio is enabled in the firmware.',
+      );
+    }
+    const keys = layouts.layouts[layouts.activeLayoutIndex]?.keys ?? null;
+    debug('Standard ZMK Studio confirmed', {
+      activeLayoutIndex: layouts.activeLayoutIndex,
+      keyCount: keys?.length ?? 0,
+    });
+    return keys;
+  }
+
+  async function probeCustomSubsystems(nextConnection: RpcConnection): Promise<OptionalCustomProbe> {
     try {
-      debug('RPC -> keymap.getPhysicalLayouts');
-      const resp = await call_rpc(nextConnection, { keymap: { getPhysicalLayouts: true } });
-      const layouts = resp?.keymap?.getPhysicalLayouts;
-      if (!layouts) return null;
-      const keys = layouts.layouts[layouts.activeLayoutIndex]?.keys ?? null;
-      debug('Physical layout loaded', { activeLayoutIndex: layouts.activeLayoutIndex, keyCount: keys?.length ?? 0 });
-      return keys;
+      debug('RPC -> custom.listCustomSubsystems (optional)');
+      const response = await call_rpc(nextConnection, { custom: { listCustomSubsystems: {} } });
+      const detected = (response.custom?.listCustomSubsystems?.subsystems ?? []).map((subsystem) => ({
+        index: subsystem.index,
+        identifier: subsystem.identifier,
+      }));
+      debug('Optional Custom Subsystems', detected);
+      return { subsystems: detected, warning: null };
     } catch (error) {
-      debug('Physical layout failed', error instanceof Error ? error.message : String(error));
-      return null;
+      const text = error instanceof Error ? error.message : String(error);
+      debug('Optional Custom RPC unavailable', text);
+      return {
+        subsystems: [],
+        warning: `Custom RPC extensions are unavailable on this firmware (${text}). Standard ZMK Studio tools remain available.`,
+      };
     }
   }
 
@@ -197,6 +225,7 @@ export default function App() {
   async function connectUsb() {
     setBusy(true);
     setComboError(null);
+    setCustomProbeWarning(null);
     setMessage('Opening ZMK USB serial connection…');
     let nextTransport: ClosableRpcTransport | null = null;
     let rpcAbort: AbortController | null = null;
@@ -209,39 +238,55 @@ export default function App() {
       const nextConnection = create_rpc_connection(nextTransport, { signal: rpcAbort.signal });
       debug('RPC pipelines started with dedicated AbortSignal');
 
-      const [subsystemResponse, keys] = await Promise.all([
-        call_rpc(nextConnection, { custom: { listCustomSubsystems: {} } }),
-        readPhysicalLayout(nextConnection),
-      ]);
-      const detected = (subsystemResponse.custom?.listCustomSubsystems?.subsystems ?? []).map((subsystem) => ({
-        index: subsystem.index,
-        identifier: subsystem.identifier,
-      }));
-      debug('Custom Subsystems', detected);
+      // Standard ZMK Studio is the only required capability.
+      const keys = await requireStandardStudio(nextConnection);
+
+      // Everything under the custom RPC namespace is optional.
+      const customProbe = await probeCustomSubsystems(nextConnection);
+      const detected = customProbe.subsystems;
       const runtimeComboDetected = detected.find((subsystem) => subsystem.identifier === RUNTIME_COMBO_SUBSYSTEM_ID);
+
       let loadedCombos: RuntimeComboRecord[] = [];
       let loadedSettings: RuntimeComboGlobalSettings | null = null;
       let localComboError: string | null = null;
+
       if (runtimeComboDetected) {
-        const result = await readRuntimeCombos(nextConnection, runtimeComboDetected.index);
-        loadedCombos = result.combos;
-        loadedSettings = result.settings;
-        if (result.mode === 'indexed') {
-          localComboError = `list_combos failed (${result.listError}); recovered ${loadedCombos.length} combo(s) via indexed fallback.`;
+        try {
+          const result = await readRuntimeCombos(nextConnection, runtimeComboDetected.index);
+          loadedCombos = result.combos;
+          loadedSettings = result.settings;
+          if (result.mode === 'indexed') {
+            localComboError = `list_combos failed (${result.listError}); recovered ${loadedCombos.length} combo(s) via indexed fallback.`;
+          }
+        } catch (error) {
+          const text = error instanceof Error ? error.message : String(error);
+          debug('Runtime Combo extension failed without aborting standard Studio', text);
+          localComboError = `Runtime Combo extension failed (${text}). Standard ZMK Studio tools remain available.`;
         }
       }
+
       setTransport(nextTransport);
       setConnection(nextConnection);
       setSubsystems(detected);
+      setCustomProbeWarning(customProbe.warning);
       setPhysicalKeys(keys);
       setCombos(loadedCombos);
       setComboSettings(loadedSettings);
       setComboError(localComboError);
-      setMessage(runtimeComboDetected ? `Connected. Read ${loadedCombos.length} Runtime Combo(s).` : `Connected. ${detected.length} Custom Subsystem(s) detected.`);
+      setSelectedIndex(null);
+      setDraft(null);
+      setActiveTool(runtimeComboDetected && !localComboError ? 'runtime-combo' : 'layer-viewer');
+
+      const extensionText = detected.length
+        ? `${detected.length} Custom Subsystem(s) detected.`
+        : customProbe.warning
+          ? 'Custom RPC not available.'
+          : 'No Custom Subsystems advertised.';
+      setMessage(`Connected to standard ZMK Studio. ${extensionText}`);
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error);
       debug('Connection failed', text);
-      setMessage(`Connection / RPC failed: ${text}`);
+      setMessage(`ZMK Studio connection failed: ${text}`);
       if (rpcAbort && !rpcAbort.signal.aborted) rpcAbort.abort('Connection setup failed');
       rpcAbortRef.current = null;
       if (nextTransport) {
@@ -270,7 +315,9 @@ export default function App() {
       if (selected) selectCombo(selected);
       setMessage(`Refreshed ${result.combos.length} Runtime Combo(s).`);
     } catch (error) {
-      setComboError(error instanceof Error ? error.message : String(error));
+      const text = error instanceof Error ? error.message : String(error);
+      setComboError(text);
+      setMessage('Runtime Combo refresh failed. Standard ZMK Studio connection is still active.');
     } finally {
       setBusy(false);
     }
@@ -307,7 +354,7 @@ export default function App() {
       const text = error instanceof Error ? error.message : String(error);
       debug('Save flow failed', text);
       setComboError(text);
-      setMessage('Save failed. See Debug Console.');
+      setMessage('Runtime Combo save failed. Standard ZMK Studio connection is still active.');
     } finally {
       setBusy(false);
     }
@@ -341,12 +388,14 @@ export default function App() {
       setTransport(null);
       setConnection(null);
       setSubsystems([]);
+      setCustomProbeWarning(null);
       setCombos([]);
       setComboSettings(null);
       setPhysicalKeys(null);
       setComboError(null);
       setSelectedIndex(null);
       setDraft(null);
+      setActiveTool('layer-viewer');
       setBusy(false);
     }
   }
@@ -387,14 +436,21 @@ export default function App() {
             <div className="section-title">Device</div>
             <div className="device-card">
               <span className={connected ? 'status online' : 'status'} />
-              <div><strong>{connected ? 'ZMK device connected' : 'Not connected'}</strong><small>{message}</small></div>
+              <div>
+                <strong>{connected ? 'Standard ZMK Studio connected' : 'Not connected'}</strong>
+                <small>{message}</small>
+              </div>
             </div>
             <div className="section-title tool-title">ZMK Tools</div>
             <nav className="nav-list tool-nav">
-              <button className={`nav-item ${activeTool === 'runtime-combo' ? 'active' : ''}`} onClick={() => setActiveTool('runtime-combo')}>Runtime Combo</button>
               <button className={`nav-item ${activeTool === 'layer-viewer' ? 'active' : ''}`} onClick={() => setActiveTool('layer-viewer')}>Layer Viewer</button>
               <button className={`nav-item ${activeTool === 'keymap-backup' ? 'active' : ''}`} onClick={() => setActiveTool('keymap-backup')}>Keymap Backup</button>
-              <button className={`nav-item ${activeTool === 'custom-settings' ? 'active' : ''}`} onClick={() => setActiveTool('custom-settings')}>Custom Settings</button>
+              {runtimeCombo && (
+                <button className={`nav-item ${activeTool === 'runtime-combo' ? 'active' : ''}`} onClick={() => setActiveTool('runtime-combo')}>Runtime Combo</button>
+              )}
+              {customSettings && (
+                <button className={`nav-item ${activeTool === 'custom-settings' ? 'active' : ''}`} onClick={() => setActiveTool('custom-settings')}>Custom Settings</button>
+              )}
               <button className="nav-item" disabled>BLE Management</button>
               <button className="nav-item" disabled>PMW3610</button>
               <button className="nav-item" disabled>PAW3222</button>
@@ -421,37 +477,34 @@ export default function App() {
 
           {!connected ? (
             <div>
-              <div className="panel empty"><div><h3>ZMK Studio</h3><p>Connect a ZMK Studio enabled keyboard with desktop Chrome or Edge using the “Connect ZMK” button.</p></div></div>
+              <div className="panel empty"><div><h3>ZMK Studio</h3><p>Connect any ZMK Studio enabled keyboard with desktop Chrome or Edge using the “Connect ZMK” button. Custom RPC extensions are optional.</p></div></div>
               <QmkDevicePanel />
             </div>
-          ) : activeTool === 'layer-viewer' && connection ? (
-            <LayerViewer connection={connection} physicalKeys={physicalKeys} behaviorOptions={behaviorOptions} onDebug={debug} />
-          ) : activeTool === 'keymap-backup' && connection ? (
-            <KeymapBackup connection={connection} onDebug={debug} />
-          ) : activeTool === 'custom-settings' && connection ? (
-            customSettings ? (
-              <CustomSettings
-                connection={connection}
-                customSettingsSubsystemIndex={customSettings.index}
-                subsystems={subsystems}
-                behaviorOptions={behaviorOptions}
-                onDebug={debug}
-              />
-            ) : (
-              <div className="panel empty"><div><h3>Custom Settings unavailable</h3><p>This firmware does not advertise cormoran_custom_settings.</p></div></div>
-            )
           ) : (
             <>
               <div className="status-strip panel">
-                <span>ZMK Studio RPC live</span>
+                <span>Standard ZMK Studio RPC live</span>
                 <code>{transport?.label || 'unknown'}</code>
+                {subsystems.length > 0 && <code>{subsystems.length} custom subsystem(s)</code>}
                 {runtimeCombo && <code>{runtimeCombo.identifier} #{runtimeCombo.index}</code>}
                 {runtimeCombo && <code>{combos.length}/{maxCombos} slots used</code>}
               </div>
+              {customProbeWarning && <div className="notice">{customProbeWarning}</div>}
               {comboError && <div className="notice">{comboError}</div>}
-              {!runtimeCombo ? (
-                <div className="panel empty"><div><h3>Runtime Combo unavailable</h3><p>This firmware does not advertise cormoran__runtime_combo.</p></div></div>
-              ) : (
+
+              {activeTool === 'layer-viewer' && connection ? (
+                <LayerViewer connection={connection} physicalKeys={physicalKeys} behaviorOptions={behaviorOptions} onDebug={debug} />
+              ) : activeTool === 'keymap-backup' && connection ? (
+                <KeymapBackup connection={connection} onDebug={debug} />
+              ) : activeTool === 'custom-settings' && connection && customSettings ? (
+                <CustomSettings
+                  connection={connection}
+                  customSettingsSubsystemIndex={customSettings.index}
+                  subsystems={subsystems}
+                  behaviorOptions={behaviorOptions}
+                  onDebug={debug}
+                />
+              ) : activeTool === 'runtime-combo' && runtimeCombo ? (
                 <div className="runtime-grid guided-runtime-grid">
                   <section className="panel combo-panel">
                     <div className="panel-heading"><div><h3>Combos from firmware</h3><p>{combos.length} of {maxCombos} slot(s) used. Choose one to edit or create a new combo.</p></div></div>
@@ -471,6 +524,8 @@ export default function App() {
                     ) : <div className="empty">Select a combo from the list or click “+ New Combo”.</div>}
                   </section>
                 </div>
+              ) : (
+                <div className="panel empty"><div><h3>Extension unavailable</h3><p>This optional firmware extension is not available. Standard Layer Viewer and Keymap Backup remain usable.</p></div></div>
               )}
             </>
           )}
