@@ -42,18 +42,37 @@ JSON files are read locally in the browser and are not uploaded.
 
 The matrix-to-key mapping is exact from the supplied QMK source. The source does not contain complete geometry for every key in the center cluster, so that portion is intentionally rendered as a schematic source-order view rather than claiming exact physical x/y placement.
 
+### Generic ZMK Studio support
+
+The ZMK connection path now treats **standard ZMK Studio RPC as the required base** and Custom RPC extensions as optional capabilities.
+
+- Connect any keyboard that exposes the standard ZMK Studio Web Serial interface
+- Validate the connection with standard `keymap.getPhysicalLayouts`
+- Keep Layer Viewer and Keymap Backup available even when the firmware has no Custom RPC namespace
+- Probe `custom.listCustomSubsystems` only as an optional extension step
+- Do not fail the standard ZMK connection when Custom RPC probing fails
+- Do not fail the standard ZMK connection when Runtime Combo initialization fails
+- Default to Layer Viewer when no Runtime Combo extension is available
+- Show Runtime Combo and Custom Settings navigation only when their matching subsystem is detected
+- Release Web Serial cleanly on disconnect so another Studio can connect immediately
+
+A firmware that does not enable ZMK Studio cannot be used through this path simply because it exposes some other serial interface; the standard Studio RPC probe must succeed.
+
 ### ZMK Runtime Combo
 
-- Connect to ZMK Studio over Web Serial
-- Detect DYA-compatible Custom Studio RPC subsystems
+Runtime Combo is an optional firmware extension rather than a connection requirement.
+
+- Detect the `cormoran__runtime_combo` Custom Studio RPC subsystem when present
 - Read Runtime Combos
 - Edit combo key positions from the firmware's physical layout
 - Select behaviors by firmware-provided display name
 - Save and re-read state from firmware
 - Compatibility fallback for older/broken `list_combos` implementations
+- Preserve standard ZMK Studio access if Runtime Combo RPC fails
 
 ### ZMK Layer Viewer
 
+- Uses standard ZMK Studio RPC
 - Reads the active physical layout from firmware
 - Reads all layers with standard `keymap.getKeymap`
 - View and edit the live keymap
@@ -64,7 +83,7 @@ The matrix-to-key mapping is exact from the supplied QMK source. The source does
 ### Other ZMK tools
 
 - Keymap backup / restore
-- Custom Settings inspector/editor
+- Custom Settings inspector/editor when `cormoran_custom_settings` is advertised
 - Persistent Debug Console
 - RPC timing/payload logs
 - Clean Web Serial teardown so another Studio can connect immediately after disconnect
@@ -113,12 +132,18 @@ npm run build
                  v                         v
            ZMK firmware              QMK / VIA candidate
                  |                         |
-         ZMK Studio RPC              Raw HID descriptor
-         + Custom RPC                + read-only VIA protocol
-                 |                   + dynamic keymap reads
-                 |                   + source profiles
-                 |                         |
-                 +------------+------------+
+      Standard ZMK Studio RPC        Raw HID descriptor
+                 |                   + read-only VIA protocol
+          +------+-------+           + dynamic keymap reads
+          |              |           + source profiles
+          |              |
+    Standard tools   Optional Custom RPC
+    Layer Viewer     Runtime Combo
+    Keymap Backup    Custom Settings
+          |              |
+          +------+-------+
+                 |
+                 +-------------------------+
                               |
                        My Keeb Studio
 ```
