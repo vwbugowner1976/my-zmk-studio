@@ -36,6 +36,7 @@ const CONSUMER_USAGE: Record<number, string> = {
 type ParamLabel = { text: string; kind: 'hid' | 'layer' | 'named' | 'raw' | 'none' };
 type KeyLabel = { title: string; subtitle: string; detail: string };
 type HoveredKey = { position: number; label: KeyLabel; x: number; y: number };
+type Point = { x: number; y: number };
 
 function safeName(value: string) {
   return value.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'layer';
@@ -123,14 +124,48 @@ function behaviorLabel(binding: BehaviorBinding | undefined, options: BehaviorOp
   };
 }
 
+function rotatePoint(point: Point, origin: Point, degrees: number): Point {
+  if (!degrees) return point;
+  const radians = degrees * Math.PI / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const dx = point.x - origin.x;
+  const dy = point.y - origin.y;
+  return {
+    x: origin.x + dx * cos - dy * sin,
+    y: origin.y + dx * sin + dy * cos,
+  };
+}
+
 function geometry(keys: KeyPhysicalAttrs[]) {
   const u = (value: number) => value / 100;
-  const maxX = Math.max(...keys.map((key) => u(key.x) + u(key.width)));
-  const maxY = Math.max(...keys.map((key) => u(key.y) + u(key.height)));
+  const rotationDegrees = (value: number) => value / 100;
+  const points = keys.flatMap((key) => {
+    const x = u(key.x);
+    const y = u(key.y);
+    const width = u(key.width);
+    const height = u(key.height);
+    const origin = { x: u(key.rx), y: u(key.ry) };
+    const degrees = rotationDegrees(key.r);
+    const corners = [
+      { x, y },
+      { x: x + width, y },
+      { x, y: y + height },
+      { x: x + width, y: y + height },
+    ];
+    return corners.map((point) => rotatePoint(point, origin, degrees));
+  });
+  const minX = Math.min(...points.map((point) => point.x));
+  const minY = Math.min(...points.map((point) => point.y));
+  const maxX = Math.max(...points.map((point) => point.x));
+  const maxY = Math.max(...points.map((point) => point.y));
   return {
-    width: Math.ceil(maxX * UNIT_PX + PADDING * 2),
-    height: Math.ceil(maxY * UNIT_PX + PADDING * 2 + HEADER),
+    width: Math.ceil((maxX - minX) * UNIT_PX + PADDING * 2),
+    height: Math.ceil((maxY - minY) * UNIT_PX + PADDING * 2 + HEADER),
+    offsetX: PADDING - minX * UNIT_PX,
+    offsetY: PADDING + HEADER - minY * UNIT_PX,
     u,
+    rotationDegrees,
   };
 }
 
@@ -188,25 +223,31 @@ function LayerSvg({
         Layer {layerIndex}: {layer.name || `Layer ${layerIndex}`}
       </text>
       <text x={PADDING} y={49} fill="#94a3b8" fontSize="11">
-        My ZMK Studio · click a key to edit · orange border = staged change
+        My Keeb Studio · click a key to edit · orange border = staged change
       </text>
 
       {keys.map((key, position) => {
-        const x = PADDING + g.u(key.x) * UNIT_PX;
-        const y = PADDING + HEADER + g.u(key.y) * UNIT_PX;
+        const x = g.offsetX + g.u(key.x) * UNIT_PX;
+        const y = g.offsetY + g.u(key.y) * UNIT_PX;
         const width = Math.max(32, g.u(key.width) * UNIT_PX - 4);
         const height = Math.max(32, g.u(key.height) * UNIT_PX - 4);
-        const rx = PADDING + g.u(key.rx) * UNIT_PX;
-        const ry = PADDING + HEADER + g.u(key.ry) * UNIT_PX;
+        const rx = g.offsetX + g.u(key.rx) * UNIT_PX;
+        const ry = g.offsetY + g.u(key.ry) * UNIT_PX;
+        const degrees = g.rotationDegrees(key.r);
         const label = behaviorLabel(layer.bindings[position], behaviorOptions);
         const maxChars = width < 50 ? 8 : 12;
         const titleLines = splitTwoLines(label.title, maxChars);
         const subtitle = shorten(label.subtitle, width < 50 ? 10 : 17);
-        const transform = key.r ? `rotate(${key.r} ${rx} ${ry})` : undefined;
+        const transform = degrees ? `rotate(${degrees} ${rx} ${ry})` : undefined;
         const titleFontSize = label.title.length <= maxChars ? 11 : 9.5;
         const centerY = y + height / 2;
         const selected = selectedPosition === position;
         const staged = stagedPositions?.has(position) ?? false;
+        const hoverCenter = rotatePoint(
+          { x: x + width / 2, y: y + height / 2 },
+          { x: rx, y: ry },
+          degrees,
+        );
 
         return (
           <g
@@ -214,7 +255,7 @@ function LayerSvg({
             transform={transform}
             className={`layer-key-group ${onSelectPosition ? 'editable' : ''} ${selected ? 'selected' : ''} ${staged ? 'staged' : ''}`}
             onClick={onSelectPosition ? () => onSelectPosition(position) : undefined}
-            onMouseEnter={() => setHovered({ position, label, x: x + width / 2, y })}
+            onMouseEnter={() => setHovered({ position, label, x: hoverCenter.x, y: hoverCenter.y })}
           >
             {staged && (
               <rect
@@ -580,7 +621,7 @@ export default function LayerViewer({
         const h = image.height * ratio;
         pdf.addImage(png, 'PNG', (pageW - w) / 2, (pageH - h) / 2, w, h, undefined, 'FAST');
       }
-      pdf?.save('my-zmk-studio-keymap.pdf');
+      pdf?.save('my-keeb-studio-keymap.pdf');
       onDebug('Layer PDF export complete', { count: keymap.layers.length });
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
