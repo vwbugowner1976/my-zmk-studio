@@ -3,6 +3,7 @@ import YamadaWillowLayout, {
   YAMADA_WILLOW_PROFILE,
   isYamadaWillowDevice,
 } from './YamadaWillowLayout';
+import { probeVialDevice, type VialProbeResult } from './vialProtocol';
 
 type HidReportInfo = {
   reportId: number;
@@ -218,6 +219,7 @@ export default function QmkDevicePanel() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('Ready to inspect a QMK Raw HID interface.');
   const [protocolVersion, setProtocolVersion] = useState<number | null>(null);
+  const [vialInfo, setVialInfo] = useState<VialProbeResult | null>(null);
   const [layerCount, setLayerCount] = useState<number | null>(null);
   const [layerCountNote, setLayerCountNote] = useState<string | null>(null);
   const [probeError, setProbeError] = useState<string | null>(null);
@@ -245,6 +247,7 @@ export default function QmkDevicePanel() {
     ? YAMADA_WILLOW_PROFILE
     : null;
   const viaDetected = protocolVersion !== null;
+  const vialDetected = vialInfo !== null;
   const matrixRows = sourceProfile?.matrix.rows ?? definition?.matrix?.rows ?? 0;
   const matrixCols = sourceProfile?.matrix.cols ?? definition?.matrix?.cols ?? 0;
   const activeKeymap = layerKeymaps[activeLayer] ?? null;
@@ -273,6 +276,7 @@ export default function QmkDevicePanel() {
 
   function resetProbe() {
     setProtocolVersion(null);
+    setVialInfo(null);
     setLayerCount(null);
     setLayerCountNote(null);
     setProbeError(null);
@@ -289,7 +293,7 @@ export default function QmkDevicePanel() {
     setBusy(true);
     resetProbe();
     resetDefinition();
-    setMessage('Choose a QMK / VIA Raw HID device…');
+    setMessage('Choose a QMK / VIA / Vial Raw HID device…');
     try {
       const devices = await hid.requestDevice({
         filters: [{ usagePage: QMK_RAW_USAGE_PAGE, usage: QMK_RAW_USAGE }],
@@ -304,7 +308,7 @@ export default function QmkDevicePanel() {
       if (isYamadaWillowDevice(selected.vendorId, selected.productId)) {
         setMessage('Yamada Willow detected. Built-in 10×10 source profile is ready; no JSON is required.');
       } else {
-        setMessage('Raw HID interface opened. No VIA command has been sent yet.');
+        setMessage('Raw HID interface opened. No VIA or Vial command has been sent yet.');
       }
     } catch (error) {
       const name = error instanceof DOMException ? error.name : '';
@@ -322,7 +326,8 @@ export default function QmkDevicePanel() {
     if (!device) return;
     setBusy(true);
     resetProbe();
-    setMessage('Sending read-only VIA protocol probe…');
+    setDefinitionError(null);
+    setMessage('Sending read-only VIA / Vial protocol probe…');
     try {
       const protocolResponse = await viaCommand(device, VIA_GET_PROTOCOL_VERSION);
       const version = (protocolResponse[1] << 8) | protocolResponse[2];
@@ -346,11 +351,32 @@ export default function QmkDevicePanel() {
         setLayerCountNote('older than the VIA v7 baseline used by the current VIA app');
       }
 
-      setMessage(`VIA protocol response detected: version ${version}.`);
+      const detectedVial = await probeVialDevice(device);
+      if (detectedVial) {
+        setVialInfo(detectedVial);
+
+        if (detectedVial.definition && !sourceProfile) {
+          const rows = Number(detectedVial.definition.matrix?.rows ?? 0);
+          const cols = Number(detectedVial.definition.matrix?.cols ?? 0);
+          if (Number.isInteger(rows) && Number.isInteger(cols) && rows > 0 && cols > 0 && rows * cols <= 512) {
+            setDefinition(detectedVial.definition);
+            setDefinitionName(`${detectedVial.definition.name || device.productName || 'Vial keyboard'} · embedded Vial definition`);
+            setDefinitionWarning(null);
+          } else {
+            setDefinitionError('Embedded Vial definition was decoded, but matrix.rows / matrix.cols were invalid. You can still load vial.json manually.');
+          }
+        } else if (detectedVial.definitionError) {
+          setDefinitionError(`Vial keyboard detected, but its embedded definition could not be decoded: ${detectedVial.definitionError}`);
+        }
+
+        setMessage(`Vial protocol v${detectedVial.protocolVersion} detected (VIA v${version}). Embedded definition size: ${detectedVial.definitionSize} bytes.`);
+      } else {
+        setMessage(`VIA protocol response detected: version ${version}. No Vial extension was detected.`);
+      }
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error);
       setProbeError(text);
-      setMessage('No valid VIA protocol response was detected.');
+      setMessage('No valid VIA / Vial protocol response was detected.');
     } finally {
       setBusy(false);
     }
@@ -395,7 +421,7 @@ export default function QmkDevicePanel() {
       setMessage(
         sourceProfile
           ? `Loaded “${parsed.name || file.name}”. Yamada Willow source profile remains authoritative at ${sourceProfile.matrix.rows}×${sourceProfile.matrix.cols}.`
-          : `Loaded VIA definition “${parsed.name || file.name}” with matrix ${rows}×${cols}.`,
+          : `Loaded keyboard definition “${parsed.name || file.name}” with matrix ${rows}×${cols}.`,
       );
     } catch (error) {
       setDefinition(null);
@@ -415,7 +441,7 @@ export default function QmkDevicePanel() {
     try {
       const loaded: number[][] = [];
       for (let layer = 0; layer < layerCount; layer += 1) {
-        setMessage(`Reading VIA layer ${layer + 1}/${layerCount} (read-only)…`);
+        setMessage(`Reading QMK dynamic layer ${layer + 1}/${layerCount} (read-only)…`);
         loaded.push(
           protocolVersion >= VIA_PROTOCOL_BETA
             ? await readLayerFast(device, layer, matrixRows, matrixCols)
@@ -427,7 +453,7 @@ export default function QmkDevicePanel() {
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error);
       setKeymapError(text);
-      setMessage('VIA keymap read failed.');
+      setMessage('QMK dynamic keymap read failed.');
     } finally {
       setBusy(false);
     }
@@ -441,7 +467,7 @@ export default function QmkDevicePanel() {
       setDevice(null);
       resetProbe();
       resetDefinition();
-      setMessage('QMK / VIA Raw HID interface released.');
+      setMessage('QMK / VIA / Vial Raw HID interface released.');
     } catch (error) {
       setMessage(`WebHID disconnect warning: ${error instanceof Error ? error.message : String(error)}`);
       setDevice(null);
@@ -476,17 +502,17 @@ export default function QmkDevicePanel() {
     <section className="panel qmk-device-panel">
       <div className="panel-heading qmk-panel-heading">
         <div>
-          <div className="eyebrow">QMK / VIA</div>
+          <div className="eyebrow">QMK / VIA / Vial</div>
           <h3>Raw HID inspector</h3>
           <p>
             Selects only the default QMK Raw HID usage page {hex4(QMK_RAW_USAGE_PAGE)} / usage {hex(QMK_RAW_USAGE)}.
-            VIA protocol and keymap reads are explicit read-only actions.
+            VIA, Vial, definition and keymap reads are explicit read-only actions.
           </p>
         </div>
         <div className="qmk-actions">
           {device && (
             <button className="button" type="button" onClick={() => void probeVia()} disabled={busy}>
-              {busy ? 'Working…' : viaDetected ? 'Probe VIA again' : 'Probe VIA (read-only)'}
+              {busy ? 'Working…' : viaDetected ? 'Probe VIA / Vial again' : 'Probe VIA / Vial (read-only)'}
             </button>
           )}
           <button
@@ -495,7 +521,7 @@ export default function QmkDevicePanel() {
             onClick={() => void (device ? disconnect() : connect())}
             disabled={busy || !hidSupported || !secureContext}
           >
-            {busy ? 'Working…' : device ? 'Disconnect QMK' : 'Connect QMK / VIA'}
+            {busy ? 'Working…' : device ? 'Disconnect QMK' : 'Connect QMK / VIA / Vial'}
           </button>
         </div>
       </div>
@@ -508,7 +534,7 @@ export default function QmkDevicePanel() {
       )}
 
       <div className="qmk-message">{message}</div>
-      {probeError && <div className="notice">VIA probe: {probeError}</div>}
+      {probeError && <div className="notice">VIA / Vial probe: {probeError}</div>}
 
       {device && (
         <div className="qmk-device-details">
@@ -518,7 +544,9 @@ export default function QmkDevicePanel() {
             <div><small>PID</small><strong><code>{hex4(device.productId)}</code></strong></div>
             <div><small>Raw HID match</small><strong>{rawCollections.length ? 'Yes' : 'Descriptor not exposed'}</strong></div>
             <div><small>VIA protocol</small><strong>{protocolVersion === null ? 'Not probed' : `v${protocolVersion}`}</strong></div>
+            <div><small>Vial protocol</small><strong>{vialInfo ? `v${vialInfo.protocolVersion}` : viaDetected ? 'Not detected' : 'Not probed'}</strong></div>
             <div><small>Dynamic layers</small><strong>{layerCount ?? 'Unknown'}</strong>{layerCountNote && <small>{layerCountNote}</small>}</div>
+            {vialInfo && <div><small>Vial keyboard UID</small><strong><code>{vialInfo.keyboardUid}</code></strong><small>{vialInfo.definitionSize} B embedded definition</small></div>}
             {sourceProfile && <div><small>Source profile</small><strong>{sourceProfile.name}</strong><small>{sourceProfile.matrix.rows}×{sourceProfile.matrix.cols} from QMK source</small></div>}
           </div>
 
@@ -530,11 +558,15 @@ export default function QmkDevicePanel() {
                   <p>
                     {sourceProfile
                       ? 'A built-in source profile matched this keyboard. JSON is optional and will never override the firmware-verified matrix dimensions.'
-                      : 'Load the keyboard’s VIA/QMK JSON locally so My Keeb Studio knows the matrix rows and columns.'}
+                      : vialDetected && vialInfo.definition
+                        ? 'Vial was detected and its embedded keyboard definition was read directly from firmware. No external JSON is required.'
+                        : vialDetected
+                          ? 'Vial was detected, but its embedded definition was not available. You can load vial.json manually.'
+                          : 'Load the keyboard’s VIA / QMK definition JSON locally so My Keeb Studio knows the matrix rows and columns.'}
                   </p>
                 </div>
                 <label className="button secondary qmk-file-button">
-                  {sourceProfile ? 'Load JSON (optional)' : 'Load VIA / QMK JSON'}
+                  {sourceProfile || (vialDetected && vialInfo.definition) ? 'Load JSON (optional)' : 'Load VIA / Vial / QMK JSON'}
                   <input type="file" accept="application/json,.json" onChange={(event) => void loadDefinition(event)} />
                 </label>
               </div>
@@ -543,6 +575,12 @@ export default function QmkDevicePanel() {
                 <div className="qmk-profile-note">
                   <strong>Yamada Willow source profile detected</strong>
                   <span>VID/PID match · 10×10 matrix · 4 layers expected from the supplied QMK source.</span>
+                </div>
+              )}
+              {vialInfo && (
+                <div className="qmk-profile-note">
+                  <strong>Vial extension detected</strong>
+                  <span>Protocol v{vialInfo.protocolVersion} · UID {vialInfo.keyboardUid} · embedded definition {vialInfo.definitionSize} bytes{vialInfo.definition ? ' · decoded successfully' : ''}</span>
                 </div>
               )}
               {definitionError && <div className="notice">Definition: {definitionError}</div>}
@@ -559,11 +597,11 @@ export default function QmkDevicePanel() {
                     </button>
                   </div>
                   <small className="qmk-definition-help">
-                    Protocol v8+ uses DYNAMIC_KEYMAP_GET_BUFFER. VIA v7 falls back to DYNAMIC_KEYMAP_GET_KEYCODE for each matrix position.
+                    Dynamic keymap reads use VIA-compatible GET commands. Vial firmware remains compatible with these read operations.
                   </small>
                 </>
               ) : (
-                <div className="qmk-definition-help">No built-in profile matched. Load a VIA/QMK JSON containing matrix.rows and matrix.cols.</div>
+                <div className="qmk-definition-help">No usable matrix definition is available yet. Load a VIA/Vial/QMK JSON containing matrix.rows and matrix.cols.</div>
               )}
             </section>
           )}
@@ -574,7 +612,7 @@ export default function QmkDevicePanel() {
             <section className="qmk-layer-viewer">
               <div className="qmk-layer-heading">
                 <div>
-                  <h4>QMK / VIA Layer Viewer</h4>
+                  <h4>QMK / VIA / Vial Layer Viewer</h4>
                   <p>{sourceProfile ? 'Source-mapped Yamada Willow view plus the raw diagnostic matrix.' : 'Matrix view from the connected keyboard.'}</p>
                 </div>
                 <div className="qmk-layer-tabs">
@@ -621,7 +659,7 @@ export default function QmkDevicePanel() {
           </div>
 
           <div className="qmk-readonly-note">
-            VIA access is read-only in this preview. The app uses GET_PROTOCOL_VERSION, GET_LAYER_COUNT, and keymap GET commands only. It does not write EEPROM, modify the keymap, reset macros, or enter the bootloader.
+            QMK-family access is read-only in this preview. VIA uses protocol/layer/keymap GET commands. Vial detection uses only GET_KEYBOARD_ID, GET_SIZE and GET_DEFINITION. The app does not write EEPROM, modify the keymap, reset macros, unlock Vial, or enter the bootloader.
           </div>
         </div>
       )}
