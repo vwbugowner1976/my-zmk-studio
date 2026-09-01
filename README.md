@@ -6,26 +6,30 @@ My Keeb Studio started as a ZMK Studio developer/diagnostic companion. The proje
 
 ## v0.7
 
-### QMK / VIA preview
+### QMK / VIA / Vial preview
 
 - Connect to the default QMK Raw HID interface with WebHID
 - Filter on the QMK default Raw HID usage page `0xFF60` and usage `0x61`
 - Show product name, VID, PID, HID collections, and report counts
-- Keep descriptor inspection command-free until the user explicitly starts the VIA probe
+- Keep descriptor inspection command-free until the user explicitly starts the VIA / Vial probe
 - Read VIA protocol version with `GET_PROTOCOL_VERSION (0x01)`
 - For VIA protocol v8+, read the dynamic layer count with `DYNAMIC_KEYMAP_GET_LAYER_COUNT (0x11)`
 - Treat VIA v7 as the legacy four-layer baseline used by the current VIA application
-- Load a VIA/QMK JSON locally to obtain matrix dimensions for generic keyboards
+- Detect Vial with the read-only `0xFE / GET_KEYBOARD_ID` command
+- Read the Vial protocol version, 8-byte keyboard UID, and embedded definition size
+- Fetch the embedded Vial keyboard definition in 32-byte blocks
+- Decode the firmware-embedded XZ definition in the browser, so Vial keyboards normally do not need a separate `vial.json`
+- Fall back to loading VIA / Vial / QMK JSON locally when no usable embedded or built-in definition is available
 - Read every dynamic layer without modifying firmware state
-  - VIA v8+: `DYNAMIC_KEYMAP_GET_BUFFER (0x12)`
+  - VIA/Vial protocol v8+: `DYNAMIC_KEYMAP_GET_BUFFER (0x12)`
   - VIA v7: `DYNAMIC_KEYMAP_GET_KEYCODE (0x04)` fallback
 - Display each layer as a row/column matrix with 16-bit QMK keycodes
 - Show common basic keycodes such as `KC_A`, `KC_ENT`, modifiers, `KC_NO`, and `KC_TRNS`
 - Release the WebHID interface cleanly on disconnect or when switching to ZMK
 
-The VIA probe and Layer Viewer are read-only and explicit. They do not write EEPROM, change keymaps, reset macros, or jump to the bootloader. Matching the QMK Raw HID usage alone is not treated as proof of VIA support; My Keeb Studio only reports VIA after receiving a valid protocol response.
+The QMK-family probe and Layer Viewer are read-only and explicit. They do not write EEPROM, change keymaps, reset macros, unlock Vial, or jump to the bootloader. Matching the QMK Raw HID usage alone is not treated as proof of VIA or Vial support; My Keeb Studio only reports a protocol after receiving a valid response.
 
-JSON files are read locally in the browser and are not uploaded.
+Local JSON files and Vial definitions read from firmware are processed in the browser and are not uploaded.
 
 ### Yamada Willow source profile
 
@@ -77,7 +81,8 @@ Runtime Combo is an optional firmware extension rather than a connection require
 - Reads all layers with standard `keymap.getKeymap`
 - View and edit the live keymap
 - Displays behavior names and parameters
-- Supports rotated physical-layout keys
+- Supports rotated physical-layout keys, including ZMK's centi-degree rotation units
+- Computes the SVG bounds from rotated key corners so angled layouts remain in view
 - Export layers as PNG or PDF
 
 ### Other ZMK tools
@@ -93,7 +98,8 @@ Runtime Combo is an optional firmware extension rather than a connection require
 Use a desktop Chromium-based browser such as Chrome or Edge.
 
 - ZMK uses Web Serial
-- QMK / VIA inspection uses WebHID
+- QMK / VIA / Vial inspection uses WebHID
+- Vial embedded definitions are XZ-decoded locally in the browser
 - A secure context is required when hosted; HTTPS is recommended and is provided automatically by hosts such as Cloudflare Pages
 
 Device communication stays between the browser and the locally connected keyboard. The current application does not require a backend server.
@@ -130,13 +136,13 @@ npm run build
              Web Serial                  WebHID
                  |                         |
                  v                         v
-           ZMK firmware              QMK / VIA candidate
+           ZMK firmware          QMK / VIA / Vial candidate
                  |                         |
       Standard ZMK Studio RPC        Raw HID descriptor
                  |                   + read-only VIA protocol
-          +------+-------+           + dynamic keymap reads
-          |              |           + source profiles
-          |              |
+          +------+-------+           + read-only Vial protocol
+          |              |           + embedded definition decode
+          |              |           + dynamic keymap reads
     Standard tools   Optional Custom RPC
     Layer Viewer     Runtime Combo
     Keymap Backup    Custom Settings
@@ -150,10 +156,11 @@ npm run build
 
 ## Future ideas
 
-- Render generic QMK/VIA layers using physical `layouts.keymap` geometry from VIA definitions
+- Render generic VIA/Vial layers using physical `layouts.keymap` geometry from the keyboard definition
 - Add more firmware/source profiles without coupling them to the WebHID transport
 - Expand shared ZMK/QMK keycode names and presentation
-- QMK/VIA keymap editing with explicit write confirmation
+- QMK/VIA/Vial keymap editing with explicit write confirmation
+- Vial combo / tap dance / key override inspection and editing
 - BLE Management diagnostics
 - PMW3610 diagnostics/settings
 - PAW3222 diagnostics/settings
