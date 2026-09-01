@@ -15,6 +15,7 @@ import './v05.css';
 import './keymapDiffGuide.css';
 import './debugConsoleOverride.css';
 import './deviceName.css';
+import './qmkDevice.css';
 
 installDeviceExportNaming();
 

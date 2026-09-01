@@ -1,7 +1,7 @@
 {
-  "name": "my-zmk-studio",
+  "name": "my-keeb-studio",
   "private": true,
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,11 +12,12 @@
     "@vitejs/plugin-react": "latest",
     "@zmkfirmware/zmk-studio-ts-client": "github:cormoran/zmk-studio-ts-client#custom-studio-protocol+bluefy",
     "jspdf": "^3.0.3",
-    "vite": "latest",
-    "typescript": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "run-script-os": "^1.1.6"
+    "run-script-os": "^1.1.6",
+    "typescript": "latest",
+    "vite": "latest",
+    "xz-decompress": "^0.2.3"
   },
   "devDependencies": {
     "@types/react": "latest",
