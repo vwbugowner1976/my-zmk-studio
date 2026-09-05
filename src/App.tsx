@@ -13,6 +13,7 @@ import LayerViewer from './LayerViewer';
 import KeymapBackup from './KeymapBackup';
 import ComboEditor from './ComboEditor';
 import CustomSettings from './CustomSettings';
+import RuntimeInputProcessor from './RuntimeInputProcessor';
 import {
   decodeGetComboResponse,
   decodeGlobalSettingsResponse,
@@ -31,9 +32,10 @@ import { useBehaviorOptions } from './useStudioCore';
 
 const RUNTIME_COMBO_SUBSYSTEM_ID = 'cormoran__runtime_combo';
 const CUSTOM_SETTINGS_SUBSYSTEM_ID = 'cormoran_custom_settings';
+const RUNTIME_INPUT_SUBSYSTEM_ID = 'cormoran_rip';
 
 type CustomSubsystem = { index: number; identifier: string };
-type ActiveTool = 'runtime-combo' | 'layer-viewer' | 'keymap-backup' | 'custom-settings';
+type ActiveTool = 'runtime-combo' | 'layer-viewer' | 'keymap-backup' | 'custom-settings' | 'trackball';
 
 const sourceLabel = (source: number) => {
   if (source === 1) return 'Default';
@@ -70,6 +72,10 @@ export default function App() {
   );
   const customSettings = useMemo(
     () => subsystems.find((subsystem) => subsystem.identifier === CUSTOM_SETTINGS_SUBSYSTEM_ID),
+    [subsystems],
+  );
+  const runtimeInput = useMemo(
+    () => subsystems.find((subsystem) => subsystem.identifier === RUNTIME_INPUT_SUBSYSTEM_ID),
     [subsystems],
   );
   const maxCombos = comboSettings?.maxCombo || 16;
@@ -352,14 +358,18 @@ export default function App() {
       ? 'Keymap Backup'
       : activeTool === 'custom-settings'
         ? 'Custom Settings'
-        : 'Runtime Combo';
+        : activeTool === 'trackball'
+          ? 'Trackball'
+          : 'Runtime Combo';
   const description = activeTool === 'layer-viewer'
     ? 'View and edit the live firmware keymap, with PNG and PDF export.'
     : activeTool === 'keymap-backup'
       ? 'Backup the live keymap to JSON or restore a matching backup.'
       : activeTool === 'custom-settings'
         ? 'Edit typed settings exposed by firmware modules, then save or discard staged changes.'
-        : 'Create and tune Runtime Combos with a guided editor.';
+        : activeTool === 'trackball'
+          ? 'Tune PG1KB cursor and scroll speed profiles live through the runtime input processor.'
+          : 'Create and tune Runtime Combos with a guided editor.';
 
   return (
     <div className="app-shell">
@@ -390,6 +400,7 @@ export default function App() {
               <button className={`nav-item ${activeTool === 'layer-viewer' ? 'active' : ''}`} onClick={() => setActiveTool('layer-viewer')}>Layer Viewer</button>
               <button className={`nav-item ${activeTool === 'keymap-backup' ? 'active' : ''}`} onClick={() => setActiveTool('keymap-backup')}>Keymap Backup</button>
               <button className={`nav-item ${activeTool === 'custom-settings' ? 'active' : ''}`} onClick={() => setActiveTool('custom-settings')}>Custom Settings</button>
+              <button className={`nav-item ${activeTool === 'trackball' ? 'active' : ''}`} onClick={() => setActiveTool('trackball')} disabled={!runtimeInput}>Trackball</button>
               <button className="nav-item" disabled>BLE Management</button>
               <button className="nav-item" disabled>PMW3610</button>
               <button className="nav-item" disabled>PAW3222</button>
@@ -427,6 +438,16 @@ export default function App() {
               />
             ) : (
               <div className="panel empty"><div><h3>Custom Settings unavailable</h3><p>This firmware does not advertise cormoran_custom_settings.</p></div></div>
+            )
+          ) : activeTool === 'trackball' && connection ? (
+            runtimeInput ? (
+              <RuntimeInputProcessor
+                connection={connection}
+                subsystemIndex={runtimeInput.index}
+                onDebug={debug}
+              />
+            ) : (
+              <div className="panel empty"><div><h3>Trackball settings unavailable</h3><p>This firmware does not advertise cormoran_rip.</p></div></div>
             )
           ) : (
             <>
