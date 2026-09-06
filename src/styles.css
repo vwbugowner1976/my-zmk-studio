@@ -262,3 +262,15 @@ p { color: #9ca3af; margin-top: 8px; }
   .trackball-editor-heading { flex-direction: column; }
   .trackball-advanced-grid { grid-template-columns: 1fr; }
 }
+
+
+.topbar-device-actions { display: flex; align-items: center; gap: 12px; }
+.topbar-device-name {
+  max-width: min(32vw, 320px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #cbd5e1;
+  font-size: 14px;
+  font-weight: 700;
+}
