@@ -203,7 +203,7 @@ function LayerSvg({
         const titleLines = splitTwoLines(label.title, maxChars);
         const subtitle = shorten(label.subtitle, width < 50 ? 10 : 17);
         const transform = key.r ? `rotate(${key.r} ${rx} ${ry})` : undefined;
-        const titleFontSize = label.title.length <= maxChars ? 11 : 9.5;
+        const titleFontSize = label.title.length <= maxChars ? 13 : 11;
         const centerY = y + height / 2;
         const selected = selectedPosition === position;
         const staged = stagedPositions?.has(position) ?? false;
@@ -252,11 +252,11 @@ function LayerSvg({
               </text>
             ))}
             {subtitle && (
-              <text x={x + width / 2} y={centerY + 15} textAnchor="middle" fill={staged ? '#fbbf24' : '#93c5fd'} fontSize="7.5">
+              <text x={x + width / 2} y={centerY + 15} textAnchor="middle" fill={staged ? '#fbbf24' : '#93c5fd'} fontSize="9">
                 {subtitle}
               </text>
             )}
-            <text x={x + 5} y={y + 11} fill={selected ? '#93c5fd' : staged ? '#fbbf24' : '#64748b'} fontSize="7">{position}</text>
+            <text x={x + 5} y={y + 11} fill={selected ? '#93c5fd' : staged ? '#fbbf24' : '#64748b'} fontSize="8">{position}</text>
           </g>
         );
       })}
