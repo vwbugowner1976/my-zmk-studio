@@ -58,6 +58,7 @@ export default function App() {
   const [draft, setDraft] = useState<RuntimeComboRecord | null>(null);
   const [physicalKeys, setPhysicalKeys] = useState<KeyPhysicalAttrs[] | null>(null);
   const [layerNames, setLayerNames] = useState<string[]>([]);
+  const [deviceName, setDeviceName] = useState('');
   const [busy, setBusy] = useState(false);
   const [studioLocked, setStudioLocked] = useState(false);
   const [message, setMessage] = useState('Chrome / Edge Web Serial ready');
@@ -207,10 +208,11 @@ export default function App() {
   }
 
   async function loadStudioData(nextConnection: RpcConnection) {
-    const [subsystemResponse, keys, keymapResponse] = await Promise.all([
+    const [subsystemResponse, keys, keymapResponse, deviceInfoResponse] = await Promise.all([
       call_rpc(nextConnection, { custom: { listCustomSubsystems: {} } }),
       readPhysicalLayout(nextConnection),
       call_rpc(nextConnection, { keymap: { getKeymap: true } }),
+      call_rpc(nextConnection, { core: { getDeviceInfo: true } }),
     ]);
     const detected = (subsystemResponse.custom?.listCustomSubsystems?.subsystems ?? []).map((subsystem) => ({
       index: subsystem.index,
@@ -237,9 +239,13 @@ export default function App() {
     );
     debug('Layer names loaded', nextLayerNames);
 
+    const nextDeviceName = deviceInfoResponse.core?.getDeviceInfo?.name?.trim() || 'ZMK Keyboard';
+    debug('Device info loaded', { name: nextDeviceName });
+
     setSubsystems(detected);
     setPhysicalKeys(keys);
     setLayerNames(nextLayerNames);
+    setDeviceName(nextDeviceName);
     setCombos(loadedCombos);
     setComboSettings(loadedSettings);
     setComboError(localComboError);
@@ -303,6 +309,7 @@ export default function App() {
         setComboSettings(null);
         setPhysicalKeys(null);
         setLayerNames([]);
+        setDeviceName('');
         setComboError(null);
         setStudioLocked(false);
         setSelectedIndex(null);
@@ -431,6 +438,7 @@ export default function App() {
       setComboSettings(null);
       setPhysicalKeys(null);
       setLayerNames([]);
+      setDeviceName('');
       setComboError(null);
       setStudioLocked(false);
       setSelectedIndex(null);
@@ -468,9 +476,12 @@ export default function App() {
             <h1>My ZMK Studio <small className="version-badge">v0.6</small></h1>
           </div>
         </div>
-        <button className={connected ? 'button secondary' : 'button'} onClick={connected ? disconnectUsb : connectUsb} disabled={busy || (!connected && !serialSupported)}>
-          {busy ? 'Working…' : connected ? 'Disconnect' : 'Connect USB'}
-        </button>
+        <div className="topbar-device-actions">
+          {connected && deviceName && <div className="topbar-device-name">{deviceName}</div>}
+          <button className={connected ? 'button secondary' : 'button'} onClick={connected ? disconnectUsb : connectUsb} disabled={busy || (!connected && !serialSupported)}>
+            {busy ? 'Working…' : connected ? 'Disconnect' : 'Connect USB'}
+          </button>
+        </div>
       </header>
 
       <main className={`workspace ${menuOpen ? '' : 'menu-collapsed'}`}>
@@ -479,7 +490,7 @@ export default function App() {
             <div className="section-title">Device</div>
             <div className="device-card">
               <span className={connected ? 'status online' : 'status'} />
-              <div><strong>{connected ? 'ZMK device connected' : 'Not connected'}</strong><small>{message}</small></div>
+              <div><strong>{connected ? (deviceName || 'ZMK device connected') : 'Not connected'}</strong><small>{message}</small></div>
             </div>
             <div className="section-title tool-title">Tools</div>
             <nav className="nav-list tool-nav">
