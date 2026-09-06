@@ -222,7 +222,10 @@ p { color: #9ca3af; margin-top: 8px; }
 .trackball-editor-heading h3 { margin-top: 4px; font-size: 24px; }
 .trackball-speed-readout { font-size: 38px; font-weight: 800; color: #f8fafc; white-space: nowrap; }
 .trackball-speed-control { margin-top: 24px; }
-.trackball-speed-labels { display: flex; justify-content: space-between; margin-bottom: 8px; color: #64748b; font-size: 11px; }
+.trackball-speed-labels { position: relative; height: 18px; margin-bottom: 8px; color: #64748b; font-size: 11px; }
+.trackball-speed-labels span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.trackball-speed-labels span:first-child { transform: translateX(0); }
+.trackball-speed-labels span:last-child { transform: translateX(-100%); }
 .trackball-speed-slider { width: 100%; accent-color: #2563eb; }
 .trackball-speed-summary { display: flex; justify-content: space-between; gap: 16px; margin-top: 12px; color: #94a3b8; font-size: 13px; }
 .trackball-speed-summary strong { color: #f8fafc; }
