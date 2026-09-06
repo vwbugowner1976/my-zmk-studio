@@ -478,12 +478,9 @@ export default function App() {
             <h1>My ZMK Studio <small className="version-badge">v0.6</small></h1>
           </div>
         </div>
-        <div className="topbar-device-actions">
-          {connected && deviceName && <div className="topbar-device-name">{deviceName}</div>}
-          <button className={connected ? 'button secondary' : 'button'} onClick={connected ? disconnectUsb : connectUsb} disabled={busy || (!connected && !serialSupported)}>
-            {busy ? 'Working…' : connected ? 'Disconnect' : 'Connect USB'}
-          </button>
-        </div>
+        <button className={connected ? 'button secondary' : 'button'} onClick={connected ? disconnectUsb : connectUsb} disabled={busy || (!connected && !serialSupported)}>
+          {busy ? 'Working…' : connected ? 'Disconnect' : 'Connect USB'}
+        </button>
       </header>
 
       <main className={`workspace ${menuOpen ? '' : 'menu-collapsed'}`}>
