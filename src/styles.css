@@ -194,7 +194,7 @@ p { color: #9ca3af; margin-top: 8px; }
 
 
 .trackball-layout { display: grid; gap: 18px; }
-.trackball-mode-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.trackball-mode-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .trackball-mode-card {
   display: grid;
   gap: 8px;
@@ -208,6 +208,7 @@ p { color: #9ca3af; margin-top: 8px; }
 }
 .trackball-mode-card:hover { border-color: #475569; background: #172033; }
 .trackball-mode-card.selected { border-color: #3b82f6; background: #172554; box-shadow: 0 0 0 1px #3b82f6 inset; }
+.trackball-mode-card.missing { cursor: default; opacity: .55; }
 .trackball-card-topline { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .trackball-side { color: #93c5fd; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
 .trackball-mode-badge { padding: 4px 8px; border-radius: 999px; font-size: 11px; font-weight: 800; }
