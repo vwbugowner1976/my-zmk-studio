@@ -226,7 +226,16 @@ export default function RuntimeInputProcessor({
                 </div>
 
                 <div className="trackball-speed-control">
-                  <div className="trackball-speed-labels"><span>0.25×</span><span>1.00×</span><span>2.00×</span><span>3.00×</span></div>
+                  <div className="trackball-speed-labels">
+                    {[0.25, 1, 2, 3].map((value) => (
+                      <span
+                        key={value}
+                        style={{ left: `${((value - 0.25) / (3 - 0.25)) * 100}%` }}
+                      >
+                        {value.toFixed(2)}×
+                      </span>
+                    ))}
+                  </div>
                   <input
                     className="trackball-speed-slider"
                     type="range"
