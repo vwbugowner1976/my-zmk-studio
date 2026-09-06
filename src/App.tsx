@@ -57,6 +57,7 @@ export default function App() {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [draft, setDraft] = useState<RuntimeComboRecord | null>(null);
   const [physicalKeys, setPhysicalKeys] = useState<KeyPhysicalAttrs[] | null>(null);
+  const [layerNames, setLayerNames] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [studioLocked, setStudioLocked] = useState(false);
   const [message, setMessage] = useState('Chrome / Edge Web Serial ready');
@@ -206,9 +207,10 @@ export default function App() {
   }
 
   async function loadStudioData(nextConnection: RpcConnection) {
-    const [subsystemResponse, keys] = await Promise.all([
+    const [subsystemResponse, keys, keymapResponse] = await Promise.all([
       call_rpc(nextConnection, { custom: { listCustomSubsystems: {} } }),
       readPhysicalLayout(nextConnection),
+      call_rpc(nextConnection, { keymap: { getKeymap: true } }),
     ]);
     const detected = (subsystemResponse.custom?.listCustomSubsystems?.subsystems ?? []).map((subsystem) => ({
       index: subsystem.index,
@@ -230,8 +232,14 @@ export default function App() {
       }
     }
 
+    const nextLayerNames = (keymapResponse.keymap?.getKeymap?.layers ?? []).map(
+      (layer, index) => layer.name || `Layer ${index}`,
+    );
+    debug('Layer names loaded', nextLayerNames);
+
     setSubsystems(detected);
     setPhysicalKeys(keys);
+    setLayerNames(nextLayerNames);
     setCombos(loadedCombos);
     setComboSettings(loadedSettings);
     setComboError(localComboError);
@@ -294,6 +302,7 @@ export default function App() {
         setCombos([]);
         setComboSettings(null);
         setPhysicalKeys(null);
+        setLayerNames([]);
         setComboError(null);
         setStudioLocked(false);
         setSelectedIndex(null);
@@ -421,6 +430,7 @@ export default function App() {
       setCombos([]);
       setComboSettings(null);
       setPhysicalKeys(null);
+      setLayerNames([]);
       setComboError(null);
       setStudioLocked(false);
       setSelectedIndex(null);
@@ -532,6 +542,7 @@ export default function App() {
               <RuntimeInputProcessor
                 connection={connection}
                 subsystemIndex={runtimeInput.index}
+                layerNames={layerNames}
                 onDebug={debug}
               />
             ) : (
