@@ -29,6 +29,7 @@ import {
   type RuntimeComboRecord,
 } from './runtimeComboProtocol';
 import { useBehaviorOptions } from './useStudioCore';
+import { setConnectedDeviceName } from './deviceIdentity';
 
 const RUNTIME_COMBO_SUBSYSTEM_ID = 'cormoran__runtime_combo';
 const CUSTOM_SETTINGS_SUBSYSTEM_ID = 'cormoran_custom_settings';
@@ -241,6 +242,7 @@ export default function App() {
 
     const nextDeviceName = deviceInfoResponse.core?.getDeviceInfo?.name?.trim() || 'ZMK Keyboard';
     debug('Device info loaded', { name: nextDeviceName });
+    setConnectedDeviceName(nextDeviceName);
 
     setSubsystems(detected);
     setPhysicalKeys(keys);
