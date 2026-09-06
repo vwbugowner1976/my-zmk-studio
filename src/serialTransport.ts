@@ -11,6 +11,8 @@ type SerialPortLike = {
   open(options: { baudRate: number }): Promise<void>;
   close(): Promise<void>;
   getInfo(): { usbVendorId?: number; usbProductId?: number };
+  addEventListener(type: 'disconnect', listener: (event: Event) => void, options?: AddEventListenerOptions | boolean): void;
+  removeEventListener(type: 'disconnect', listener: (event: Event) => void, options?: EventListenerOptions | boolean): void;
   readable: ReadableStream<Uint8Array> | null;
   writable: WritableStream<Uint8Array> | null;
 };
@@ -23,6 +25,7 @@ type SerialNavigator = Navigator & {
 
 export type ClosableRpcTransport = RpcTransport & {
   close: () => Promise<void>;
+  disconnected: Promise<void>;
 };
 
 export async function connectSerial(): Promise<ClosableRpcTransport> {
@@ -44,6 +47,16 @@ export async function connectSerial(): Promise<ClosableRpcTransport> {
   const info = port.getInfo();
   const label = `${info.usbVendorId?.toLocaleString() || ''}:${info.usbProductId?.toLocaleString() || ''}`;
   setConnectedDevice(label);
+
+  let resolveDisconnected!: () => void;
+  const disconnected = new Promise<void>((resolve) => {
+    resolveDisconnected = resolve;
+  });
+  const onDisconnect = () => {
+    clearConnectedDevice();
+    resolveDisconnected();
+  };
+  port.addEventListener('disconnect', onDisconnect, { once: true });
 
   let closePromise: Promise<void> | null = null;
 
@@ -91,6 +104,7 @@ export async function connectSerial(): Promise<ClosableRpcTransport> {
         }
         throw error;
       }
+      port.removeEventListener('disconnect', onDisconnect);
       clearConnectedDevice();
     })();
 
@@ -118,5 +132,6 @@ export async function connectSerial(): Promise<ClosableRpcTransport> {
     readable: port.readable,
     writable: port.writable,
     close,
+    disconnected,
   };
 }
