@@ -189,28 +189,45 @@ export default function RuntimeInputProcessor({
       ) : (
         <div className="trackball-layout">
           <section className="trackball-mode-grid">
-            {processors.map((processor) => {
-              const meta = PROCESSOR_META[processor.name];
-              const layerName = meta ? (layerNames[meta.layerIndex] || `Layer ${meta.layerIndex}`) : processor.name;
-              const side = meta?.side ?? 'Trackball';
-              const mode = processor.xyToScrollEnabled ? 'Scroll' : 'Cursor';
-              const currentSpeed = processor.scaleMultiplier / Math.max(1, processor.scaleDivisor);
-              return (
-                <button
-                  className={`trackball-mode-card ${selectedId === processor.id ? 'selected' : ''}`}
-                  key={processor.id}
-                  onClick={() => setSelectedId(processor.id)}
-                >
-                  <span className="trackball-card-topline">
-                    <span className="trackball-side">{side}</span>
-                    <span className={`trackball-mode-badge ${processor.xyToScrollEnabled ? 'scroll' : 'cursor'}`}>{mode}</span>
-                  </span>
-                  <strong>{layerName}</strong>
-                  <span className="trackball-card-speed">{currentSpeed.toFixed(2)}×</span>
-                  <small>{processor.name}</small>
-                </button>
-              );
-            })}
+            {[0, 1, 2].flatMap((layerIndex) => (
+              (['Left', 'Right'] as const).map((side) => {
+                const processor = processors.find((item) => {
+                  const meta = PROCESSOR_META[item.name];
+                  return meta?.layerIndex === layerIndex && meta.side === side;
+                });
+                const layerName = layerNames[layerIndex] || `Layer ${layerIndex}`;
+
+                if (!processor) {
+                  return (
+                    <div className="trackball-mode-card missing" key={`${layerIndex}-${side}`}>
+                      <span className="trackball-card-topline">
+                        <span className="trackball-side">{side}</span>
+                      </span>
+                      <strong>{layerName}</strong>
+                      <small>No runtime processor</small>
+                    </div>
+                  );
+                }
+
+                const mode = processor.xyToScrollEnabled ? 'Scroll' : 'Cursor';
+                const currentSpeed = processor.scaleMultiplier / Math.max(1, processor.scaleDivisor);
+                return (
+                  <button
+                    className={`trackball-mode-card ${selectedId === processor.id ? 'selected' : ''}`}
+                    key={processor.id}
+                    onClick={() => setSelectedId(processor.id)}
+                  >
+                    <span className="trackball-card-topline">
+                      <span className="trackball-side">{side}</span>
+                      <span className={`trackball-mode-badge ${processor.xyToScrollEnabled ? 'scroll' : 'cursor'}`}>{mode}</span>
+                    </span>
+                    <strong>{layerName}</strong>
+                    <span className="trackball-card-speed">{currentSpeed.toFixed(2)}×</span>
+                    <small>{processor.name}</small>
+                  </button>
+                );
+              })
+            ))}
           </section>
 
           <section className="panel trackball-editor">
