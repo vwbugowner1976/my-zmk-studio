@@ -191,3 +191,70 @@ p { color: #9ca3af; margin-top: 8px; }
   .global-debug-console { right: 10px; bottom: 10px; width: calc(100vw - 20px); }
   .global-debug-header { align-items: flex-start; flex-direction: column; }
 }
+
+
+.trackball-layout { display: grid; gap: 18px; }
+.trackball-mode-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.trackball-mode-card {
+  display: grid;
+  gap: 8px;
+  min-height: 150px;
+  padding: 16px;
+  border: 1px solid #263244;
+  border-radius: 14px;
+  color: #e5e7eb;
+  background: #111827;
+  text-align: left;
+}
+.trackball-mode-card:hover { border-color: #475569; background: #172033; }
+.trackball-mode-card.selected { border-color: #3b82f6; background: #172554; box-shadow: 0 0 0 1px #3b82f6 inset; }
+.trackball-card-topline { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.trackball-side { color: #93c5fd; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+.trackball-mode-badge { padding: 4px 8px; border-radius: 999px; font-size: 11px; font-weight: 800; }
+.trackball-mode-badge.cursor { color: #bfdbfe; background: #1e3a8a; }
+.trackball-mode-badge.scroll { color: #fde68a; background: #713f12; }
+.trackball-mode-card strong { font-size: 18px; }
+.trackball-mode-card small { color: #64748b; }
+.trackball-card-speed { margin-top: auto; font-size: 28px; font-weight: 800; color: #f8fafc; }
+
+.trackball-editor { padding: 20px; }
+.trackball-editor-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+.trackball-editor-heading h3 { margin-top: 4px; font-size: 24px; }
+.trackball-speed-readout { font-size: 38px; font-weight: 800; color: #f8fafc; white-space: nowrap; }
+.trackball-speed-control { margin-top: 24px; }
+.trackball-speed-labels { display: flex; justify-content: space-between; margin-bottom: 8px; color: #64748b; font-size: 11px; }
+.trackball-speed-slider { width: 100%; accent-color: #2563eb; }
+.trackball-speed-summary { display: flex; justify-content: space-between; gap: 16px; margin-top: 12px; color: #94a3b8; font-size: 13px; }
+.trackball-speed-summary strong { color: #f8fafc; }
+.trackball-actions { display: flex; gap: 10px; margin-top: 18px; }
+.trackball-advanced-toggle {
+  margin-top: 18px;
+  padding: 0;
+  border: 0;
+  color: #93c5fd;
+  background: transparent;
+  font-weight: 700;
+}
+.trackball-advanced { margin-top: 12px; padding: 16px; background: #0b1220; }
+.trackball-advanced-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.trackball-advanced-grid label { display: grid; gap: 6px; color: #cbd5e1; font-size: 12px; font-weight: 700; }
+.trackball-advanced-grid input {
+  width: 100%;
+  padding: 10px 11px;
+  border: 1px solid #334155;
+  border-radius: 9px;
+  color: #f8fafc;
+  background: #0f172a;
+}
+.trackball-transform { display: grid; gap: 4px; margin-top: 14px; padding-top: 14px; border-top: 1px solid #1f2937; }
+.trackball-transform span { color: #94a3b8; font-size: 12px; }
+
+@media (max-width: 1100px) {
+  .trackball-mode-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 700px) {
+  .trackball-mode-grid { grid-template-columns: 1fr; }
+  .trackball-editor-heading { flex-direction: column; }
+  .trackball-advanced-grid { grid-template-columns: 1fr; }
+}
