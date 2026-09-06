@@ -34,6 +34,8 @@ export default function RuntimeInputProcessor({
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [multiplier, setMultiplier] = useState(1);
   const [divisor, setDivisor] = useState(1);
+  const [speed, setSpeed] = useState(1);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -108,7 +110,27 @@ export default function RuntimeInputProcessor({
     if (!selected || busy) return;
     setMultiplier(selected.scaleMultiplier);
     setDivisor(selected.scaleDivisor);
+    setSpeed(selected.scaleMultiplier / Math.max(1, selected.scaleDivisor));
+    setAdvancedOpen(false);
   }, [selected, busy]);
+
+  function ratioForSpeed(value: number) {
+    const rounded = Math.max(0.25, Math.min(3, Math.round(value * 4) / 4));
+    const numerator = Math.round(rounded * 4);
+    const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
+    const divisorValue = gcd(numerator, 4);
+    return {
+      multiplier: numerator / divisorValue,
+      divisor: 4 / divisorValue,
+    };
+  }
+
+  function setSliderSpeed(value: number) {
+    const ratio = ratioForSpeed(value);
+    setSpeed(value);
+    setMultiplier(ratio.multiplier);
+    setDivisor(ratio.divisor);
+  }
 
   async function applyScale() {
     if (!selected) return;
@@ -165,77 +187,126 @@ export default function RuntimeInputProcessor({
       {processors.length === 0 && !loading ? (
         <div className="panel empty"><div><h3>No runtime processors found</h3><p>The firmware must advertise the cormoran_rip subsystem and define runtime input processors.</p></div></div>
       ) : (
-        <div className="runtime-grid guided-runtime-grid">
-          <section className="panel combo-panel">
-            <div className="panel-heading"><div><h3>Trackball modes</h3><p>Select a mode to change its scale.</p></div></div>
-            <div className="combo-scroll-box">
-              {processors.map((processor) => (
+        <div className="trackball-layout">
+          <section className="trackball-mode-grid">
+            {processors.map((processor) => {
+              const meta = PROCESSOR_META[processor.name];
+              const layerName = meta ? (layerNames[meta.layerIndex] || `Layer ${meta.layerIndex}`) : processor.name;
+              const side = meta?.side ?? 'Trackball';
+              const mode = processor.xyToScrollEnabled ? 'Scroll' : 'Cursor';
+              const currentSpeed = processor.scaleMultiplier / Math.max(1, processor.scaleDivisor);
+              return (
                 <button
-                  className={`combo-row ${selectedId === processor.id ? 'selected' : ''}`}
+                  className={`trackball-mode-card ${selectedId === processor.id ? 'selected' : ''}`}
                   key={processor.id}
                   onClick={() => setSelectedId(processor.id)}
                 >
-                  <span>
-                    <strong>{displayName(processor)}</strong>
-                    <small>
-                      {processor.name} · {processor.xyToScrollEnabled ? 'scroll' : 'cursor'} · scale {processor.scaleMultiplier}/{processor.scaleDivisor}
-                    </small>
+                  <span className="trackball-card-topline">
+                    <span className="trackball-side">{side}</span>
+                    <span className={`trackball-mode-badge ${processor.xyToScrollEnabled ? 'scroll' : 'cursor'}`}>{mode}</span>
                   </span>
-                  <span className="pill">{(processor.scaleMultiplier / Math.max(1, processor.scaleDivisor)).toFixed(2)}×</span>
+                  <strong>{layerName}</strong>
+                  <span className="trackball-card-speed">{currentSpeed.toFixed(2)}×</span>
+                  <small>{processor.name}</small>
                 </button>
-              ))}
-            </div>
+              );
+            })}
           </section>
 
-          <section className="panel editor">
+          <section className="panel trackball-editor">
             {selected ? (
-              <div className="custom-settings-list">
-                <div className="custom-setting-row">
-                  <div className="custom-setting-info">
-                    <div><strong>{displayName(selected)}</strong></div>
-                    <small>Firmware processor: {selected.name} · ID {selected.id}</small>
+              <>
+                <div className="trackball-editor-heading">
+                  <div>
+                    <div className="eyebrow">{PROCESSOR_META[selected.name]?.side ?? 'Trackball'} · {selected.xyToScrollEnabled ? 'Scroll' : 'Cursor'}</div>
+                    <h3>{PROCESSOR_META[selected.name] ? (layerNames[PROCESSOR_META[selected.name].layerIndex] || `Layer ${PROCESSOR_META[selected.name].layerIndex}`) : selected.name}</h3>
+                    <p>Move the slider to change this mode's speed.</p>
                   </div>
-                  <div className="custom-setting-editor">
-                    <label className="custom-setting-number">
-                      <input
-                        type="number"
-                        min={1}
-                        value={multiplier}
-                        disabled={busy}
-                        onChange={(event) => setMultiplier(Number(event.target.value))}
-                      />
-                      <small>Multiplier</small>
-                    </label>
-                    <label className="custom-setting-number">
-                      <input
-                        type="number"
-                        min={1}
-                        value={divisor}
-                        disabled={busy}
-                        onChange={(event) => setDivisor(Number(event.target.value))}
-                      />
-                      <small>Divisor</small>
-                    </label>
-                    <button
-                      className="button"
-                      disabled={busy || (multiplier === selected.scaleMultiplier && divisor === selected.scaleDivisor)}
-                      onClick={() => void applyScale()}
-                    >
-                      {busy ? 'Saving…' : 'Apply & Save'}
-                    </button>
+                  <div className="trackball-speed-readout">{speed.toFixed(2)}×</div>
+                </div>
+
+                <div className="trackball-speed-control">
+                  <div className="trackball-speed-labels"><span>0.25×</span><span>1.00×</span><span>2.00×</span><span>3.00×</span></div>
+                  <input
+                    className="trackball-speed-slider"
+                    type="range"
+                    min="0.25"
+                    max="3"
+                    step="0.25"
+                    value={speed}
+                    disabled={busy}
+                    onChange={(event) => setSliderSpeed(Number(event.target.value))}
+                  />
+                  <div className="trackball-speed-summary">
+                    <span>Current <strong>{(selected.scaleMultiplier / Math.max(1, selected.scaleDivisor)).toFixed(2)}×</strong></span>
+                    <span>New <strong>{speed.toFixed(2)}×</strong></span>
                   </div>
                 </div>
-                <div className="custom-setting-row">
-                  <div className="custom-setting-info">
-                    <div><strong>Current transform</strong></div>
-                    <small>Read-only in this first PG1KB integration.</small>
-                  </div>
-                  <div className="custom-setting-readonly">
-                    <strong>{selected.rotationDegrees}° · swap {selected.xySwapEnabled ? 'on' : 'off'} · X inv {selected.xInvert ? 'on' : 'off'} · Y inv {selected.yInvert ? 'on' : 'off'}</strong>
-                    <small>CPI and PAW3222 polling interval remain firmware settings for now.</small>
-                  </div>
+
+                <div className="trackball-actions">
+                  <button
+                    className="button"
+                    disabled={busy || (multiplier === selected.scaleMultiplier && divisor === selected.scaleDivisor)}
+                    onClick={() => void applyScale()}
+                  >
+                    {busy ? 'Saving…' : 'Apply & Save'}
+                  </button>
+                  <button
+                    className="button secondary"
+                    disabled={busy}
+                    onClick={() => {
+                      setMultiplier(selected.scaleMultiplier);
+                      setDivisor(selected.scaleDivisor);
+                      setSpeed(selected.scaleMultiplier / Math.max(1, selected.scaleDivisor));
+                    }}
+                  >
+                    Reset
+                  </button>
                 </div>
-              </div>
+
+                <button className="trackball-advanced-toggle" type="button" onClick={() => setAdvancedOpen((value) => !value)}>
+                  {advancedOpen ? 'Hide advanced settings' : 'Advanced settings'}
+                </button>
+
+                {advancedOpen && (
+                  <div className="trackball-advanced panel">
+                    <div className="trackball-advanced-grid">
+                      <label>
+                        <span>Multiplier</span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={multiplier}
+                          disabled={busy}
+                          onChange={(event) => {
+                            const value = Number(event.target.value);
+                            setMultiplier(value);
+                            setSpeed(value / Math.max(1, divisor));
+                          }}
+                        />
+                      </label>
+                      <label>
+                        <span>Divisor</span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={divisor}
+                          disabled={busy}
+                          onChange={(event) => {
+                            const value = Number(event.target.value);
+                            setDivisor(value);
+                            setSpeed(multiplier / Math.max(1, value));
+                          }}
+                        />
+                      </label>
+                    </div>
+                    <div className="trackball-transform">
+                      <strong>Transform</strong>
+                      <span>{selected.rotationDegrees}° · swap {selected.xySwapEnabled ? 'on' : 'off'} · X invert {selected.xInvert ? 'on' : 'off'} · Y invert {selected.yInvert ? 'on' : 'off'}</span>
+                    </div>
+                  </div>
+                )}
+              </>
             ) : (
               <div className="empty">Select a trackball mode.</div>
             )}
