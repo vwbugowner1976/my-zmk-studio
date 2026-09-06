@@ -56,12 +56,14 @@ export default function App() {
   const [draft, setDraft] = useState<RuntimeComboRecord | null>(null);
   const [physicalKeys, setPhysicalKeys] = useState<KeyPhysicalAttrs[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [studioLocked, setStudioLocked] = useState(false);
   const [message, setMessage] = useState('Chrome / Edge Web Serial ready');
   const [activeTool, setActiveTool] = useState<ActiveTool>('runtime-combo');
   const [menuOpen, setMenuOpen] = useState(() => localStorage.getItem('my-zmk-studio-menu-open') !== 'false');
   const rpcAbortRef = useRef<AbortController | null>(null);
+  const unlockPollBusyRef = useRef(false);
 
-  const behaviorOptions = useBehaviorOptions(connection);
+  const behaviorOptions = useBehaviorOptions(studioLocked ? null : connection);
   const serialSupported = typeof navigator !== 'undefined' && 'serial' in navigator;
   const connected = !!transport && !!connection;
   const runtimeCombo = useMemo(
@@ -88,6 +90,37 @@ export default function App() {
   useEffect(() => {
     if (!connection) setPhysicalKeys(null);
   }, [connection]);
+
+  useEffect(() => {
+    if (!studioLocked || !connection) return undefined;
+
+    let cancelled = false;
+    const timer = window.setInterval(() => {
+      if (cancelled || unlockPollBusyRef.current) return;
+      unlockPollBusyRef.current = true;
+
+      void readStudioLockState(connection)
+        .then(async (lockState) => {
+          if (cancelled || lockState === 0) return;
+          debug('Studio lock state', 'UNLOCKED');
+          debug('Continuing connection after Studio unlock...');
+          await loadStudioData(connection);
+        })
+        .catch((error) => {
+          if (!cancelled) debug('Studio unlock poll failed', error instanceof Error ? error.message : String(error));
+        })
+        .finally(() => {
+          unlockPollBusyRef.current = false;
+        });
+    }, 800);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      unlockPollBusyRef.current = false;
+    };
+  }, [studioLocked, connection]);
+
 
   function debug(event: string, detail?: unknown) {
     const timestamp = new Date().toISOString().slice(11, 23);
@@ -166,6 +199,47 @@ export default function App() {
     debug('Editor selected combo', { index: combo.index, name: combo.name });
   }
 
+  async function loadStudioData(nextConnection: RpcConnection) {
+    const [subsystemResponse, keys] = await Promise.all([
+      call_rpc(nextConnection, { custom: { listCustomSubsystems: {} } }),
+      readPhysicalLayout(nextConnection),
+    ]);
+    const detected = (subsystemResponse.custom?.listCustomSubsystems?.subsystems ?? []).map((subsystem) => ({
+      index: subsystem.index,
+      identifier: subsystem.identifier,
+    }));
+    debug('Custom Subsystems', detected);
+
+    const runtimeComboDetected = detected.find((subsystem) => subsystem.identifier === RUNTIME_COMBO_SUBSYSTEM_ID);
+    let loadedCombos: RuntimeComboRecord[] = [];
+    let loadedSettings: RuntimeComboGlobalSettings | null = null;
+    let localComboError: string | null = null;
+
+    if (runtimeComboDetected) {
+      const result = await readRuntimeCombos(nextConnection, runtimeComboDetected.index);
+      loadedCombos = result.combos;
+      loadedSettings = result.settings;
+      if (result.mode === 'indexed') {
+        localComboError = `list_combos failed (${result.listError}); recovered ${loadedCombos.length} combo(s) via indexed fallback.`;
+      }
+    }
+
+    setSubsystems(detected);
+    setPhysicalKeys(keys);
+    setCombos(loadedCombos);
+    setComboSettings(loadedSettings);
+    setComboError(localComboError);
+    setStudioLocked(false);
+    setMessage(runtimeComboDetected
+      ? `Connected. Read ${loadedCombos.length} Runtime Combo(s).`
+      : `Connected. ${detected.length} Custom Subsystem(s) detected.`);
+  }
+
+  async function readStudioLockState(nextConnection: RpcConnection) {
+    const response = await call_rpc(nextConnection, { core: { getLockState: true } });
+    return response.core?.getLockState;
+  }
+
   function createNewCombo() {
     if (nextFreeComboIndex === null) return;
     const keyPressBehavior = behaviorOptions?.find((option) => /key\s*press|keypress/i.test(option.displayName));
@@ -204,35 +278,19 @@ export default function App() {
       const nextConnection = create_rpc_connection(nextTransport, { signal: rpcAbort.signal });
       debug('RPC pipelines started with dedicated AbortSignal');
 
-      const [subsystemResponse, keys] = await Promise.all([
-        call_rpc(nextConnection, { custom: { listCustomSubsystems: {} } }),
-        readPhysicalLayout(nextConnection),
-      ]);
-      const detected = (subsystemResponse.custom?.listCustomSubsystems?.subsystems ?? []).map((subsystem) => ({
-        index: subsystem.index,
-        identifier: subsystem.identifier,
-      }));
-      debug('Custom Subsystems', detected);
-      const runtimeComboDetected = detected.find((subsystem) => subsystem.identifier === RUNTIME_COMBO_SUBSYSTEM_ID);
-      let loadedCombos: RuntimeComboRecord[] = [];
-      let loadedSettings: RuntimeComboGlobalSettings | null = null;
-      let localComboError: string | null = null;
-      if (runtimeComboDetected) {
-        const result = await readRuntimeCombos(nextConnection, runtimeComboDetected.index);
-        loadedCombos = result.combos;
-        loadedSettings = result.settings;
-        if (result.mode === 'indexed') {
-          localComboError = `list_combos failed (${result.listError}); recovered ${loadedCombos.length} combo(s) via indexed fallback.`;
-        }
-      }
+      const lockState = await readStudioLockState(nextConnection);
+      debug('Studio lock state', lockState === 0 ? 'LOCKED' : 'UNLOCKED');
+
       setTransport(nextTransport);
       setConnection(nextConnection);
-      setSubsystems(detected);
-      setPhysicalKeys(keys);
-      setCombos(loadedCombos);
-      setComboSettings(loadedSettings);
-      setComboError(localComboError);
-      setMessage(runtimeComboDetected ? `Connected. Read ${loadedCombos.length} Runtime Combo(s).` : `Connected. ${detected.length} Custom Subsystem(s) detected.`);
+
+      if (lockState === 0) {
+        setStudioLocked(true);
+        setMessage('Studio unlock required. Press the Studio Unlock key on the keyboard.');
+        debug('Waiting for Studio unlock...');
+      } else {
+        await loadStudioData(nextConnection);
+      }
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error);
       debug('Connection failed', text);
@@ -340,6 +398,7 @@ export default function App() {
       setComboSettings(null);
       setPhysicalKeys(null);
       setComboError(null);
+      setStudioLocked(false);
       setSelectedIndex(null);
       setDraft(null);
       setBusy(false);
@@ -412,6 +471,17 @@ export default function App() {
 
           {!connected ? (
             <div className="panel empty"><div><h3>USB connection</h3><p>Connect a ZMK Studio enabled keyboard with Chrome or Edge.</p></div></div>
+          ) : studioLocked ? (
+            <div className="panel empty">
+              <div>
+                <h3>ZMK Studio is locked</h3>
+                <p>This keyboard requires Studio Unlock before keymap and behavior data can be read.</p>
+                <p>Press the key mapped to <code>&amp;studio_unlock</code> on the keyboard. My Keeb Studio will continue automatically when it is unlocked.</p>
+                <div className="actions">
+                  <button className="button secondary" onClick={() => void disconnectUsb()} disabled={busy}>Disconnect</button>
+                </div>
+              </div>
+            </div>
           ) : activeTool === 'layer-viewer' && connection ? (
             <LayerViewer connection={connection} physicalKeys={physicalKeys} behaviorOptions={behaviorOptions} onDebug={debug} />
           ) : activeTool === 'keymap-backup' && connection ? (
