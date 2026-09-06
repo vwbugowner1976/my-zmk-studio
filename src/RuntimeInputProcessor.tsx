@@ -10,22 +10,24 @@ import {
   type RuntimeInputProcessorRecord,
 } from './runtimeInputProtocol';
 
-const FRIENDLY_NAMES: Record<string, string> = {
-  lscroll: 'Left · Base Scroll',
-  lmove: 'Left · Num Cursor',
-  lprec: 'Left · Sym Precision Scroll',
-  rmove: 'Right · Base Cursor',
-  rprec: 'Right · Num Precision Cursor',
-  rscroll: 'Right · Sym Scroll',
+const PROCESSOR_META: Record<string, { side: 'Left' | 'Right'; layerIndex: number }> = {
+  lscroll: { side: 'Left', layerIndex: 0 },
+  lmove: { side: 'Left', layerIndex: 1 },
+  lprec: { side: 'Left', layerIndex: 2 },
+  rmove: { side: 'Right', layerIndex: 0 },
+  rprec: { side: 'Right', layerIndex: 1 },
+  rscroll: { side: 'Right', layerIndex: 2 },
 };
 
 export default function RuntimeInputProcessor({
   connection,
   subsystemIndex,
+  layerNames,
   onDebug,
 }: {
   connection: RpcConnection;
   subsystemIndex: number;
+  layerNames: string[];
   onDebug: (event: string, detail?: unknown) => void;
 }) {
   const [processors, setProcessors] = useState<RuntimeInputProcessorRecord[]>([]);
@@ -41,6 +43,14 @@ export default function RuntimeInputProcessor({
     () => processors.find((processor) => processor.id === selectedId) ?? null,
     [processors, selectedId],
   );
+
+  const displayName = (processor: RuntimeInputProcessorRecord) => {
+    const meta = PROCESSOR_META[processor.name];
+    if (!meta) return processor.name;
+    const layerName = layerNames[meta.layerIndex] || `Layer ${meta.layerIndex}`;
+    const mode = processor.xyToScrollEnabled ? 'Scroll' : 'Cursor';
+    return `${meta.side} · ${layerName} · ${mode}`;
+  };
 
   async function callRuntimeInput(payload: Uint8Array, label: string) {
     onDebug(`RPC -> runtime input ${label}`, { subsystemIndex, bytes: payload.length });
@@ -125,7 +135,7 @@ export default function RuntimeInputProcessor({
       setProcessors((previous) => previous.map((item) => item.id === selected.id
         ? { ...item, scaleMultiplier: multiplier, scaleDivisor: divisor }
         : item));
-      setMessage(`${FRIENDLY_NAMES[selected.name] ?? selected.name}: saved ${multiplier}/${divisor}.`);
+      setMessage(`${displayName(selected)}: saved ${multiplier}/${divisor}.`);
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : String(cause);
       setError(text);
@@ -166,7 +176,7 @@ export default function RuntimeInputProcessor({
                   onClick={() => setSelectedId(processor.id)}
                 >
                   <span>
-                    <strong>{FRIENDLY_NAMES[processor.name] ?? processor.name}</strong>
+                    <strong>{displayName(processor)}</strong>
                     <small>
                       {processor.name} · {processor.xyToScrollEnabled ? 'scroll' : 'cursor'} · scale {processor.scaleMultiplier}/{processor.scaleDivisor}
                     </small>
@@ -182,7 +192,7 @@ export default function RuntimeInputProcessor({
               <div className="custom-settings-list">
                 <div className="custom-setting-row">
                   <div className="custom-setting-info">
-                    <div><strong>{FRIENDLY_NAMES[selected.name] ?? selected.name}</strong></div>
+                    <div><strong>{displayName(selected)}</strong></div>
                     <small>Firmware processor: {selected.name} · ID {selected.id}</small>
                   </div>
                   <div className="custom-setting-editor">
