@@ -11,9 +11,9 @@ import { jsPDF } from 'jspdf';
 import type { BehaviorOption } from './useStudioCore';
 import KeyPicker from './KeyPicker';
 
-const UNIT_PX = 58;
-const PADDING = 28;
-const HEADER = 58;
+const UNIT_PX = 72;
+const PADDING = 34;
+const HEADER = 66;
 
 const KEYBOARD_USAGE: Record<number, string> = {
   40: 'Enter', 41: 'Esc', 42: 'Backspace', 43: 'Tab', 44: 'Space',
