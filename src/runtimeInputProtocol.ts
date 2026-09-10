@@ -49,6 +49,13 @@ export function encodeSetScaleDivisorRequest(id: number, value: number) {
   ]));
 }
 
+export function encodeSetRotationRequest(id: number, value: number) {
+  return Uint8Array.from(bytesField(5, [
+    ...varintField(1, id),
+    ...varintField(2, value),
+  ]));
+}
+
 class Reader {
   private pos = 0;
   constructor(private readonly data: Uint8Array) {}
