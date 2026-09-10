@@ -5,6 +5,7 @@ import {
   assertRuntimeInputResponse,
   decodeRuntimeInputNotification,
   encodeListInputProcessorsRequest,
+  encodeSetRotationRequest,
   encodeSetScaleDivisorRequest,
   encodeSetScaleMultiplierRequest,
   type RuntimeInputProcessorRecord,
@@ -18,6 +19,18 @@ const PROCESSOR_META: Record<string, { side: 'Left' | 'Right'; layerIndex: numbe
   rprec: { side: 'Right', layerIndex: 1 },
   rscroll: { side: 'Right', layerIndex: 2 },
 };
+
+const ROTATION_PROCESSOR_NAME = {
+  Left: 'lrot',
+  Right: 'rrot',
+} as const;
+
+type Side = keyof typeof ROTATION_PROCESSOR_NAME;
+
+function clampAngle(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(-180, Math.min(180, Math.round(value)));
+}
 
 export default function RuntimeInputProcessor({
   connection,
@@ -35,6 +48,7 @@ export default function RuntimeInputProcessor({
   const [multiplier, setMultiplier] = useState(1);
   const [divisor, setDivisor] = useState(1);
   const [speed, setSpeed] = useState(1);
+  const [rotationDraft, setRotationDraft] = useState<Record<Side, number>>({ Left: 0, Right: 0 });
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -45,6 +59,11 @@ export default function RuntimeInputProcessor({
     () => processors.find((processor) => processor.id === selectedId) ?? null,
     [processors, selectedId],
   );
+
+  const rotationProcessors = useMemo(() => ({
+    Left: processors.find((processor) => processor.name === ROTATION_PROCESSOR_NAME.Left) ?? null,
+    Right: processors.find((processor) => processor.name === ROTATION_PROCESSOR_NAME.Right) ?? null,
+  }), [processors]);
 
   const displayName = (processor: RuntimeInputProcessorRecord) => {
     const meta = PROCESSOR_META[processor.name];
@@ -69,6 +88,7 @@ export default function RuntimeInputProcessor({
     setLoading(true);
     setError(null);
     setProcessors([]);
+    setSelectedId(null);
     setMessage('Reading runtime pointing processors…');
     try {
       await callRuntimeInput(encodeListInputProcessorsRequest(), 'list_input_processors');
@@ -96,7 +116,9 @@ export default function RuntimeInputProcessor({
           next.sort((a, b) => a.id - b.id);
           return next;
         });
-        setSelectedId((current) => current ?? processor.id);
+        if (PROCESSOR_META[processor.name]) {
+          setSelectedId((current) => current ?? processor.id);
+        }
         onDebug('Runtime input processor notification', processor);
       } catch (cause) {
         onDebug('Runtime input notification decode failed', cause instanceof Error ? cause.message : String(cause));
@@ -105,6 +127,13 @@ export default function RuntimeInputProcessor({
     void loadProcessors();
     return unsubscribe;
   }, [connection, subsystemIndex]);
+
+  useEffect(() => {
+    setRotationDraft((current) => ({
+      Left: rotationProcessors.Left?.rotationDegrees ?? current.Left,
+      Right: rotationProcessors.Right?.rotationDegrees ?? current.Right,
+    }));
+  }, [rotationProcessors.Left?.rotationDegrees, rotationProcessors.Right?.rotationDegrees]);
 
   useEffect(() => {
     if (!selected || busy) return;
@@ -167,12 +196,39 @@ export default function RuntimeInputProcessor({
     }
   }
 
+  async function applyRotation(side: Side) {
+    const processor = rotationProcessors[side];
+    if (!processor) return;
+    const value = clampAngle(rotationDraft[side]);
+    setRotationDraft((current) => ({ ...current, [side]: value }));
+    if (value === processor.rotationDegrees) return;
+
+    setBusy(true);
+    setError(null);
+    try {
+      await callRuntimeInput(
+        encodeSetRotationRequest(processor.id, value),
+        `set_rotation(${processor.name}, ${value})`,
+      );
+      setProcessors((previous) => previous.map((item) => item.id === processor.id
+        ? { ...item, rotationDegrees: value }
+        : item));
+      setMessage(`${side} trackball orientation saved: ${value}° relative to the current hardware alignment.`);
+    } catch (cause) {
+      const text = cause instanceof Error ? cause.message : String(cause);
+      setError(text);
+      onDebug('Runtime rotation save failed', text);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="custom-settings-view">
       <section className="panel custom-settings-toolbar">
         <div>
           <h3>Trackball Runtime Settings</h3>
-          <p>Adjust the six PG1KB cursor/scroll speed profiles without rebuilding firmware.</p>
+          <p>Adjust speed, orientation and scroll inertia without rebuilding firmware.</p>
         </div>
         <div className="custom-settings-actions">
           <button className="button secondary" onClick={() => void loadProcessors()} disabled={busy || loading}>
@@ -183,6 +239,89 @@ export default function RuntimeInputProcessor({
 
       {error && <div className="notice">{error}</div>}
       {message && <div className="status-strip panel"><span>{message}</span></div>}
+
+      {(rotationProcessors.Left || rotationProcessors.Right) && (
+        <section className="panel trackball-orientation-panel">
+          <div className="trackball-orientation-heading">
+            <div>
+              <h3>Trackball Orientation</h3>
+              <p>Rotate each physical trackball by any angle. 0° keeps the currently tested direction.</p>
+            </div>
+          </div>
+          <div className="trackball-orientation-grid">
+            {(['Left', 'Right'] as Side[]).map((side) => {
+              const processor = rotationProcessors[side];
+              if (!processor) {
+                return <div className="trackball-orientation-card missing" key={side}><strong>{side}</strong><small>Rotation processor unavailable</small></div>;
+              }
+              const draft = rotationDraft[side];
+              const changed = draft !== processor.rotationDegrees;
+              return (
+                <div className="trackball-orientation-card" key={side}>
+                  <div className="trackball-orientation-card-title">
+                    <div><span>{side}</span><strong>{draft}°</strong></div>
+                    <small>Current {processor.rotationDegrees}°</small>
+                  </div>
+                  <input
+                    className="trackball-orientation-slider"
+                    type="range"
+                    min="-180"
+                    max="180"
+                    step="1"
+                    value={draft}
+                    disabled={busy}
+                    onChange={(event) => setRotationDraft((current) => ({
+                      ...current,
+                      [side]: clampAngle(Number(event.target.value)),
+                    }))}
+                  />
+                  <div className="trackball-orientation-scale"><span>-180°</span><span>0°</span><span>180°</span></div>
+                  <div className="trackball-orientation-entry">
+                    <input
+                      type="number"
+                      min={-180}
+                      max={180}
+                      step={1}
+                      value={draft}
+                      disabled={busy}
+                      onChange={(event) => setRotationDraft((current) => ({
+                        ...current,
+                        [side]: clampAngle(Number(event.target.value)),
+                      }))}
+                    />
+                    <span>degrees</span>
+                  </div>
+                  <div className="trackball-orientation-presets">
+                    {[-90, 0, 90, 180].map((angle) => (
+                      <button
+                        className="button secondary"
+                        type="button"
+                        key={angle}
+                        disabled={busy}
+                        onClick={() => setRotationDraft((current) => ({ ...current, [side]: angle }))}
+                      >
+                        {angle}°
+                      </button>
+                    ))}
+                  </div>
+                  <div className="trackball-actions">
+                    <button className="button" disabled={busy || !changed} onClick={() => void applyRotation(side)}>
+                      {busy ? 'Saving…' : 'Apply & Save'}
+                    </button>
+                    <button
+                      className="button secondary"
+                      disabled={busy || !changed}
+                      onClick={() => setRotationDraft((current) => ({ ...current, [side]: processor.rotationDegrees }))}
+                    >
+                      Undo
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {processors.length === 0 && !loading ? (
         <div className="panel empty"><div><h3>No runtime processors found</h3><p>The firmware must advertise the cormoran_rip subsystem and define runtime input processors.</p></div></div>
@@ -200,9 +339,7 @@ export default function RuntimeInputProcessor({
                 if (!processor) {
                   return (
                     <div className="trackball-mode-card missing" key={`${layerIndex}-${side}`}>
-                      <span className="trackball-card-topline">
-                        <span className="trackball-side">{side}</span>
-                      </span>
+                      <span className="trackball-card-topline"><span className="trackball-side">{side}</span></span>
                       <strong>{layerName}</strong>
                       <small>No runtime processor</small>
                     </div>
@@ -245,12 +382,7 @@ export default function RuntimeInputProcessor({
                 <div className="trackball-speed-control">
                   <div className="trackball-speed-labels">
                     {[0.25, 1, 2, 3].map((value) => (
-                      <span
-                        key={value}
-                        style={{ left: `${((value - 0.25) / (3 - 0.25)) * 100}%` }}
-                      >
-                        {value.toFixed(2)}×
-                      </span>
+                      <span key={value} style={{ left: `${((value - 0.25) / (3 - 0.25)) * 100}%` }}>{value.toFixed(2)}×</span>
                     ))}
                   </div>
                   <input
@@ -327,7 +459,7 @@ export default function RuntimeInputProcessor({
                       </label>
                     </div>
                     <div className="trackball-transform">
-                      <strong>Transform</strong>
+                      <strong>Mode transform</strong>
                       <span>{selected.rotationDegrees}° · swap {selected.xySwapEnabled ? 'on' : 'off'} · X invert {selected.xInvert ? 'on' : 'off'} · Y invert {selected.yInvert ? 'on' : 'off'}</span>
                     </div>
                   </div>
