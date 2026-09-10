@@ -24,7 +24,7 @@ export default function KeyTesterPortal() {
               <div>
                 <div className="eyebrow">Keyboard diagnostics</div>
                 <h2>Key Tester</h2>
-                <p>Checks the actual key events received by Windows / the browser.</p>
+                <p>Test actual HID input, or load the keyboard's real physical layout from ZMK Studio.</p>
               </div>
               <button className="button secondary" type="button" onClick={() => setOpen(false)}>Close</button>
             </div>
