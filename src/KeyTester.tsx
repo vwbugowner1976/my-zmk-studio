@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { call_rpc, create_rpc_connection } from '@zmkfirmware/zmk-studio-ts-client';
+import { call_rpc, create_rpc_connection, type RpcConnection } from '@zmkfirmware/zmk-studio-ts-client';
 import type { KeyPhysicalAttrs } from '@zmkfirmware/zmk-studio-ts-client/keymap';
 import { connectSerial } from './serialTransport';
 import './keyTester.css';
@@ -83,6 +83,17 @@ function physicalGeometry(keys: PhysicalKey[]) {
   return { u, width: Math.max(1, maxX), height: Math.max(1, maxY) };
 }
 
+async function releaseRpcConnection(connection: RpcConnection | null, abort: AbortController | null) {
+  if (abort && !abort.signal.aborted) abort.abort('Key Tester layout load complete');
+  if (!connection) return;
+
+  try { await connection.request_writable.close(); } catch { /* expected after abort */ }
+  try { await connection.request_response_readable.cancel(); } catch { /* expected after abort */ }
+  try { await connection.notification_readable.cancel(); } catch { /* expected after abort */ }
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 export default function KeyTester() {
   const [pressed, setPressed] = useState<Set<string>>(() => new Set());
   const [seen, setSeen] = useState<Set<string>>(() => new Set());
@@ -151,11 +162,12 @@ export default function KeyTester() {
     setLayoutBusy(true);
     setLayoutMessage('Opening ZMK Studio…');
     let transport: Awaited<ReturnType<typeof connectSerial>> | null = null;
+    let connection: RpcConnection | null = null;
     let abort: AbortController | null = null;
     try {
       transport = await connectSerial();
       abort = new AbortController();
-      const connection = create_rpc_connection(transport, { signal: abort.signal });
+      connection = create_rpc_connection(transport, { signal: abort.signal });
       const lock = await call_rpc(connection, { core: { getLockState: true } });
       if (lock.core?.getLockState === 0) {
         throw new Error('ZMK Studio is locked. Press the Studio Unlock key, then try again.');
@@ -173,7 +185,7 @@ export default function KeyTester() {
       const baseLayer = keymapResp.keymap?.getKeymap?.layers?.[0];
       const behaviorIds = behaviorListResp.behaviors?.listAllBehaviors?.behaviors ?? [];
       const details = await Promise.all(behaviorIds.map((behaviorId) =>
-        call_rpc(connection, { behaviors: { getBehaviorDetails: { behaviorId } } }),
+        call_rpc(connection!, { behaviors: { getBehaviorDetails: { behaviorId } } }),
       ));
       const keyPressIds = new Set<number>();
       details.forEach((response, index) => {
@@ -194,7 +206,7 @@ export default function KeyTester() {
     } catch (error) {
       setLayoutMessage(error instanceof Error ? error.message : String(error));
     } finally {
-      if (abort && !abort.signal.aborted) abort.abort('Key Tester layout loaded');
+      await releaseRpcConnection(connection, abort);
       if (transport) {
         try { await transport.close(); } catch { /* best effort */ }
       }
