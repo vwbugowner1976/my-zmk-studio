@@ -96,7 +96,10 @@ function SettingEditor({
   const range = setting.meta?.constraints.find((constraint) => constraint.type === 'range');
   const isLayer = setting.meta?.constraints.some((constraint) => constraint.type === 'layer') ?? false;
   const isBehavior = setting.meta?.constraints.some((constraint) => constraint.type === 'behavior') ?? false;
-  const secureWrite = setting.meta?.writePermission === 1;
+  // App.tsx renders this editor only after the live Studio lock state is UNLOCKED.
+  // writePermission=SECURE means "requires unlock", not "currently locked".
+  // Firmware remains the authority and will reject a write if lock state changes.
+  const secureWrite = false;
   const changed = !valueEqual(draft, setting.value);
 
   if (!draft || draft.type === 'bytes' || draft.type === 'array') {
