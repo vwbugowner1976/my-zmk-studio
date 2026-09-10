@@ -89,13 +89,28 @@ export function encodeListSettingsRequest(requireMeta = true) {
   return new Uint8Array(bytesField(1, inner));
 }
 
-export function encodeWriteSettingRequest(setting: CustomSettingRecord, value: CustomSettingValue) {
+function encodeWriteSettingWithMode(
+  setting: CustomSettingRecord,
+  value: CustomSettingValue,
+  mode: 0 | 1,
+) {
   const inner = [
     ...bytesField(1, encodeSettingRef(setting.customSubsystemIndex, setting.key)),
     ...bytesField(2, encodeSettingValue(value)),
-    ...varintField(3, 0, true),
+    ...varintField(3, mode, true),
   ];
   return new Uint8Array(bytesField(3, inner));
+}
+
+// Stage in RAM. Matches the generic Custom Settings editor's existing behavior.
+export function encodeWriteSettingRequest(setting: CustomSettingRecord, value: CustomSettingValue) {
+  return encodeWriteSettingWithMode(setting, value, 0);
+}
+
+// Persist this setting immediately. Used by focused editors whose "Apply & Save"
+// must not flush unrelated staged settings from other tools.
+export function encodeWriteSettingPersistRequest(setting: CustomSettingRecord, value: CustomSettingValue) {
+  return encodeWriteSettingWithMode(setting, value, 1);
 }
 
 function encodeScope() {
