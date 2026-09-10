@@ -5,8 +5,7 @@ import {
   decodeCustomSettingsNotification,
   decodeCustomSettingsResponse,
   encodeListSettingsRequest,
-  encodeSaveSettingsRequest,
-  encodeWriteSettingRequest,
+  encodeWriteSettingPersistRequest,
   type CustomSettingRecord,
 } from './customSettingsSafeProtocol';
 
@@ -123,10 +122,10 @@ export default function TrackballInertiaSettings({
     return unsubscribe;
   }, [connection, customSettingsSubsystemIndex, runtimeInputSubsystemIndex]);
 
-  async function stage(key: string, value: { type: 'int32'; value: number } | { type: 'bool'; value: boolean }) {
+  async function persist(key: string, value: { type: 'int32'; value: number } | { type: 'bool'; value: boolean }) {
     const setting = byKey.get(key);
     if (!setting) throw new Error(`Firmware setting not found: ${key}`);
-    await callCustomSettings(encodeWriteSettingRequest(setting, value), `stage(${key})`);
+    await callCustomSettings(encodeWriteSettingPersistRequest(setting, value), `persist(${key})`);
   }
 
   async function applyAndSave() {
@@ -134,12 +133,11 @@ export default function TrackballInertiaSettings({
     setError(null);
     setMessage('');
     try {
-      await stage(INERTIA_KEYS.enabled, { type: 'bool', value: draft.enabled });
-      await stage(INERTIA_KEYS.start, { type: 'int32', value: draft.start });
-      await stage(INERTIA_KEYS.move, { type: 'int32', value: draft.move });
-      await stage(INERTIA_KEYS.stop, { type: 'int32', value: draft.stop });
-      const saved = await callCustomSettings(encodeSaveSettingsRequest(), 'save_settings');
-      setMessage(`Inertia saved (${saved.affectedCount} setting(s)). It takes effect from the next idle gesture.`);
+      await persist(INERTIA_KEYS.enabled, { type: 'bool', value: draft.enabled });
+      await persist(INERTIA_KEYS.start, { type: 'int32', value: draft.start });
+      await persist(INERTIA_KEYS.move, { type: 'int32', value: draft.move });
+      await persist(INERTIA_KEYS.stop, { type: 'int32', value: draft.stop });
+      setMessage('Inertia saved. It takes effect from the next idle gesture.');
       await load();
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : String(cause);
