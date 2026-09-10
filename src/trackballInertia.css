@@ -1,0 +1,59 @@
+.trackball-inertia {
+  margin-top: 18px;
+}
+
+.trackball-inertia-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.trackball-inertia-heading > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trackball-inertia-heading small,
+.trackball-inertia-grid small {
+  opacity: 0.65;
+}
+
+.trackball-inertia-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.trackball-inertia-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.trackball-inertia-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.trackball-inertia-grid label > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-weight: 600;
+}
+
+.trackball-inertia-grid input[type='number'] {
+  width: 100%;
+}
+
+@media (max-width: 760px) {
+  .trackball-inertia-grid {
+    grid-template-columns: 1fr;
+  }
+}
