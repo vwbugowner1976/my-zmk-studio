@@ -3,6 +3,7 @@ import { call_rpc, type RpcConnection } from '@zmkfirmware/zmk-studio-ts-client'
 import RuntimeInputProcessorBase from './RuntimeInputProcessorBase';
 import TrackballInertiaSettings from './TrackballInertiaSettings';
 import './trackballInertia.css';
+import './trackballOrientation.css';
 
 const CUSTOM_SETTINGS_SUBSYSTEM_ID = 'cormoran_custom_settings';
 
