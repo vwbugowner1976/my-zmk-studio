@@ -10,13 +10,22 @@ import { useLanguage } from './i18n';
 import './bleManagementPortal.css';
 
 const BLE_MANAGEMENT_SUBSYSTEM_ID = 'mykeeb__ble_management';
+const TOOL_EVENT = 'mykeebstudio-active-tool';
 
 type Subsystem = { index: number; identifier: string };
+
+function nativeToolTitle() {
+  const active = document.querySelector<HTMLElement>('.tool-nav .nav-item.active');
+  const text = (active?.textContent ?? '').trim();
+  if (/Layer Viewer|Keymap|レイヤービューア|キーマップ/i.test(text)) return 'Keymap';
+  return text || 'Runtime Combo';
+}
 
 export default function BLEManagementPortal() {
   const { isJapanese, t } = useLanguage();
   const [open, setOpen] = useState(false);
   const [menuHost, setMenuHost] = useState<HTMLElement | null>(null);
+  const [contentHost, setContentHost] = useState<HTMLElement | null>(null);
   const [subsystem, setSubsystem] = useState<Subsystem | null>(null);
   const [detecting, setDetecting] = useState(false);
   const { connection } = useSyncExternalStore(
@@ -26,10 +35,15 @@ export default function BLEManagementPortal() {
   );
 
   useEffect(() => {
-    const findMenu = () => setMenuHost(document.querySelector<HTMLElement>('.tool-nav'));
-    findMenu();
-    const observer = new MutationObserver(findMenu);
-    observer.observe(document.body, { childList: true, subtree: true });
+    const workspace = document.querySelector<HTMLElement>('.workspace');
+    if (!workspace) return undefined;
+    const syncHosts = () => {
+      setMenuHost(document.querySelector<HTMLElement>('.tool-nav'));
+      setContentHost(document.querySelector<HTMLElement>('.content'));
+    };
+    syncHosts();
+    const observer = new MutationObserver(syncHosts);
+    observer.observe(workspace, { childList: true, subtree: true });
     return () => observer.disconnect();
   }, []);
 
@@ -59,7 +73,44 @@ export default function BLEManagementPortal() {
     return () => { cancelled = true; };
   }, [connection]);
 
+  useEffect(() => {
+    if (!contentHost) return;
+    contentHost.classList.toggle('external-tool-active', open);
+    return () => contentHost.classList.remove('external-tool-active');
+  }, [contentHost, open]);
+
+  useEffect(() => {
+    const onToolEvent = (event: Event) => {
+      const detail = (event as CustomEvent<{ id?: string }>).detail;
+      if (detail?.id && detail.id !== 'ble-management') setOpen(false);
+    };
+    const onDocumentClick = (event: MouseEvent) => {
+      const button = (event.target as HTMLElement | null)?.closest('.tool-nav .nav-item');
+      if (!button || button.classList.contains('ble-management-menu-item')) return;
+      setOpen(false);
+    };
+    window.addEventListener(TOOL_EVENT, onToolEvent);
+    document.addEventListener('click', onDocumentClick, true);
+    return () => {
+      window.removeEventListener(TOOL_EVENT, onToolEvent);
+      document.removeEventListener('click', onDocumentClick, true);
+    };
+  }, []);
+
   const available = !!connection && !!subsystem;
+
+  function toggle() {
+    if (!available) return;
+    setOpen((current) => {
+      const next = !current;
+      window.dispatchEvent(new CustomEvent(TOOL_EVENT, {
+        detail: next
+          ? { id: 'ble-management', title: t('bleManagement') }
+          : { id: 'native', title: nativeToolTitle() },
+      }));
+      return next;
+    });
+  }
 
   return (
     <>
@@ -67,7 +118,7 @@ export default function BLEManagementPortal() {
         <button
           type="button"
           className={`nav-item ble-management-menu-item ${open ? 'active' : ''}`}
-          onClick={() => available && setOpen((value) => !value)}
+          onClick={toggle}
           disabled={!available}
           title={available
             ? (isJapanese ? 'BLEプロファイルを管理' : 'Manage BLE profiles')
@@ -81,27 +132,18 @@ export default function BLEManagementPortal() {
         menuHost,
       )}
 
-      {open && connection && subsystem && (
-        <div className="ble-management-overlay" role="dialog" aria-modal="true" aria-label={t('bleManagement')}>
-          <div className="ble-management-window">
-            <div className="ble-management-window-head">
-              <div>
-                <div className="eyebrow">Bluetooth</div>
-                <h2>{t('bleManagement')}</h2>
-                <p>{isJapanese ? '接続中キーボードのBLEプロファイルを管理します。' : 'Manage BLE profiles on the connected keyboard.'}</p>
-              </div>
-              <button className="button secondary" type="button" onClick={() => setOpen(false)}>{isJapanese ? '閉じる' : 'Close'}</button>
-            </div>
-            <BLEManagement
-              connection={connection}
-              subsystemIndex={subsystem.index}
-              onDebug={(event, detail) => {
-                const suffix = detail === undefined ? '' : ` ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`;
-                console.info(`[MyZMKStudio] ${new Date().toISOString().slice(11, 23)} ${event}${suffix}`);
-              }}
-            />
-          </div>
-        </div>
+      {open && contentHost && connection && subsystem && createPortal(
+        <div className="embedded-tool-page ble-management-main-page">
+          <BLEManagement
+            connection={connection}
+            subsystemIndex={subsystem.index}
+            onDebug={(event, detail) => {
+              const suffix = detail === undefined ? '' : ` ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`;
+              console.info(`[MyKeebStudio] ${new Date().toISOString().slice(11, 23)} ${event}${suffix}`);
+            }}
+          />
+        </div>,
+        contentHost,
       )}
     </>
   );
