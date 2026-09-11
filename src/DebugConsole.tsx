@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useLanguage } from './i18n';
 
 const STORAGE_KEY = 'my-zmk-studio-debug-log';
 const POSITION_KEY = 'my-zmk-studio-debug-position';
@@ -43,8 +44,9 @@ function clampPosition(position: Position, element: HTMLElement | null): Positio
 }
 
 export default function DebugConsole() {
+  const { isJapanese } = useLanguage();
   const [lines, setLines] = useState<string[]>(loadStoredLines);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const [copied, setCopied] = useState(false);
   const [position, setPosition] = useState<Position | null>(loadStoredPosition);
   const panelRef = useRef<HTMLElement | null>(null);
@@ -181,19 +183,19 @@ export default function DebugConsole() {
         onPointerCancel={endDrag}
       >
         <div className="global-debug-title">
-          <strong>Debug Console</strong>
-          <span>{lines.length} lines · drag this header to move</span>
+          <strong>{isJapanese ? 'デバッグコンソール' : 'Debug Console'}</strong>
+          <span>{lines.length} {isJapanese ? '行 · ヘッダーをドラッグして移動' : 'lines · drag this header to move'}</span>
         </div>
         <div className="global-debug-actions">
           <button type="button" className="global-debug-toggle" onClick={() => setCollapsed((value) => !value)}>
-            {collapsed ? 'Debug Console' : 'Hide'}
+            {collapsed ? (isJapanese ? 'デバッグコンソール' : 'Debug Console') : (isJapanese ? '隠す' : 'Hide')}
           </button>
-          <button type="button" onClick={resetPosition} disabled={!position}>Reset Position</button>
-          <button type="button" onClick={() => void copyLog()} disabled={!lines.length}>{copied ? 'Copied!' : 'Copy'}</button>
-          <button type="button" onClick={clearLog} disabled={!lines.length}>Clear Log</button>
+          <button type="button" onClick={resetPosition} disabled={!position}>{isJapanese ? '位置をリセット' : 'Reset Position'}</button>
+          <button type="button" onClick={() => void copyLog()} disabled={!lines.length}>{copied ? (isJapanese ? 'コピー済み' : 'Copied!') : (isJapanese ? 'コピー' : 'Copy')}</button>
+          <button type="button" onClick={clearLog} disabled={!lines.length}>{isJapanese ? 'ログを消去' : 'Clear Log'}</button>
         </div>
       </div>
-      {!collapsed && <pre>{lines.join('\n') || 'No debug events yet.'}</pre>}
+      {!collapsed && <pre>{lines.join('\n') || (isJapanese ? 'デバッグイベントはまだありません。' : 'No debug events yet.')}</pre>}
     </section>
   );
 }
