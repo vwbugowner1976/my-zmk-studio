@@ -2,10 +2,66 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 
 export type Language = 'en' | 'ja';
 
+const MESSAGES = {
+  en: {
+    appName: 'MyKeebStudio',
+    tools: 'Tools',
+    device: 'Device',
+    connectUsb: 'Connect USB',
+    disconnect: 'Disconnect',
+    working: 'Working…',
+    layerViewer: 'Layer Viewer',
+    keyTester: 'Key Tester',
+    trackball: 'Trackball',
+    runtimeCombo: 'Runtime Combo',
+    customSettings: 'Custom Settings',
+    keymapBackup: 'Keymap Backup',
+    bleManagement: 'BLE Management',
+    debugConsole: 'Debug Console',
+    hide: 'Hide',
+    copy: 'Copy',
+    copied: 'Copied!',
+    clear: 'Clear',
+    resetPosition: 'Reset Position',
+    noDebugEvents: 'No debug events yet.',
+    layout: 'Layout',
+    actualLayout: 'Keyboard',
+    rawInputMonitor: 'Raw Input Monitor',
+  },
+  ja: {
+    appName: 'MyKeebStudio',
+    tools: 'ツール',
+    device: 'デバイス',
+    connectUsb: 'USB接続',
+    disconnect: '切断',
+    working: '処理中…',
+    layerViewer: 'レイヤービューア',
+    keyTester: 'キーテスター',
+    trackball: 'トラックボール',
+    runtimeCombo: 'ランタイムコンボ',
+    customSettings: 'カスタム設定',
+    keymapBackup: 'キーマップ バックアップ',
+    bleManagement: 'BLE管理',
+    debugConsole: 'デバッグコンソール',
+    hide: '隠す',
+    copy: 'コピー',
+    copied: 'コピー済み',
+    clear: 'クリア',
+    resetPosition: '位置をリセット',
+    noDebugEvents: 'デバッグイベントはまだありません。',
+    layout: 'レイアウト',
+    actualLayout: '実機',
+    rawInputMonitor: 'Raw Input Monitor',
+  },
+} as const;
+
+type MessageKey = keyof typeof MESSAGES.en;
+
 type LanguageContextValue = {
   language: Language;
   setLanguage: (language: Language) => void;
   isJapanese: boolean;
+  t: (key: MessageKey) => string;
 };
 
 const STORAGE_KEY = 'my-keeb-studio-language';
@@ -30,6 +86,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     language,
     setLanguage: setLanguageState,
     isJapanese: language === 'ja',
+    t: (key) => MESSAGES[language][key],
   }), [language]);
 
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
