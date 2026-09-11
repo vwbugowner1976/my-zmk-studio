@@ -32,28 +32,15 @@
   gap: 14px;
 }
 
-.keymap-workspace-tabs {
-  display: inline-flex;
-  justify-self: start;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid #334155;
-  border-radius: 10px;
-  background: #0f172a;
+.keymap-workspace-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  min-height: 38px;
 }
 
-.keymap-workspace-tabs button {
-  border: 0;
-  border-radius: 7px;
-  padding: 8px 12px;
-  color: #94a3b8;
-  background: transparent;
-  font-weight: 800;
-}
-
-.keymap-workspace-tabs button.active {
-  color: #fff;
-  background: #2563eb;
+.keymap-workspace-actions.backup-open {
+  justify-content: flex-start;
 }
 
 .layer-viewer.keymap-backup-active > :not(.keymap-workspace-portal) {
