@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import KeymapBackup from './KeymapBackup';
 import {
@@ -6,19 +6,37 @@ import {
   subscribeSharedStudioConnection,
 } from './studioConnectionRegistry';
 
+type KeymapMode = 'edit' | 'backup';
+
+function keymapMenuButton() {
+  return document.querySelector<HTMLButtonElement>('.tool-nav > .nav-item:nth-child(2)');
+}
+
 function isKeymapActive() {
-  const active = document.querySelector<HTMLElement>('.tool-nav .nav-item.active');
-  return /Layer Viewer|Keymap|キーマップ|レイヤービューア/i.test(active?.textContent ?? '');
+  const button = keymapMenuButton();
+  return !!button?.classList.contains('active');
 }
 
 export default function KeymapWorkspacePortal() {
   const [host, setHost] = useState<HTMLElement | null>(null);
+  const [menuHost, setMenuHost] = useState<HTMLElement | null>(null);
   const [backupOpen, setBackupOpen] = useState(false);
+  const requestedModeRef = useRef<KeymapMode | null>(null);
   const { connection } = useSyncExternalStore(
     subscribeSharedStudioConnection,
     getSharedStudioConnectionSnapshot,
     getSharedStudioConnectionSnapshot,
   );
+
+  useEffect(() => {
+    const findMenu = () => {
+      setMenuHost(document.querySelector<HTMLElement>('.tool-nav'));
+    };
+    findMenu();
+    const observer = new MutationObserver(findMenu);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const content = document.querySelector<HTMLElement>('.content');
@@ -29,13 +47,19 @@ export default function KeymapWorkspacePortal() {
         ? content.querySelector<HTMLElement>('.layer-viewer')
         : null;
 
-      if (next && next !== host) {
-        next.classList.remove('keymap-backup-active');
+      if (next) {
+        const requested = requestedModeRef.current;
+        if (requested) {
+          setBackupOpen(requested === 'backup');
+          requestedModeRef.current = null;
+        } else if (next !== host) {
+          setBackupOpen(false);
+        }
+      } else if (!requestedModeRef.current) {
         setBackupOpen(false);
       }
 
       setHost((current) => current === next ? current : next);
-      if (!next) setBackupOpen(false);
     };
 
     sync();
@@ -54,9 +78,42 @@ export default function KeymapWorkspacePortal() {
     return () => host.classList.remove('keymap-backup-active');
   }, [host, backupOpen]);
 
-  if (!host) return null;
+  function openFromMenu(mode: KeymapMode) {
+    requestedModeRef.current = mode;
+    const button = keymapMenuButton();
+    if (!button) return;
 
-  return createPortal(
+    if (!button.classList.contains('active')) {
+      button.click();
+      return;
+    }
+
+    setBackupOpen(mode === 'backup');
+    requestedModeRef.current = null;
+  }
+
+  const sidebar = menuHost ? createPortal(
+    <div className="keymap-nav-submenu" aria-label="Keymap tools">
+      <button
+        type="button"
+        className={!backupOpen && isKeymapActive() ? 'active' : ''}
+        onClick={() => openFromMenu('edit')}
+      >
+        Edit
+      </button>
+      <button
+        type="button"
+        className={backupOpen && isKeymapActive() ? 'active' : ''}
+        onClick={() => openFromMenu('backup')}
+        disabled={!connection}
+      >
+        Backup / Restore
+      </button>
+    </div>,
+    menuHost,
+  ) : null;
+
+  const workspace = host ? createPortal(
     <div className="keymap-workspace-portal">
       {!backupOpen ? (
         <div className="keymap-workspace-actions">
@@ -95,5 +152,7 @@ export default function KeymapWorkspacePortal() {
       )}
     </div>,
     host,
-  );
+  ) : null;
+
+  return <>{sidebar}{workspace}</>;
 }
