@@ -1,4 +1,5 @@
-.content.external-tool-active > *:not(.embedded-tool-page) {
+.content.external-tool-active > *:not(.embedded-tool-page),
+.content:has(> .embedded-tool-page) > *:not(.embedded-tool-page) {
   display: none !important;
 }
 
@@ -13,7 +14,6 @@
   gap: 14px;
 }
 
-/* Rename the existing Layer Viewer menu entry without touching App routing yet. */
 .tool-nav > .nav-item:nth-child(2) {
   font-size: 0;
 }
@@ -22,7 +22,6 @@
   font-size: 14px;
 }
 
-/* Keymap Backup is now available from inside Keymap. */
 .tool-nav > .nav-item:nth-child(3) {
   display: none !important;
 }
@@ -65,7 +64,6 @@
   min-width: 0;
 }
 
-/* The current tool now lives in the title bar, so reclaim vertical space. */
 body.mykeeb-connected .content-header > div:first-child {
   display: none;
 }
