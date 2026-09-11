@@ -30,6 +30,10 @@ import {
 } from './runtimeComboProtocol';
 import { useBehaviorOptions } from './useStudioCore';
 import { setConnectedDeviceName } from './deviceIdentity';
+import {
+  clearKeyTesterStudioSnapshot,
+  setKeyTesterStudioSnapshot,
+} from './keyTesterStudioSnapshot';
 
 const RUNTIME_COMBO_SUBSYSTEM_ID = 'cormoran__runtime_combo';
 const CUSTOM_SETTINGS_SUBSYSTEM_ID = 'cormoran_custom_settings';
@@ -97,7 +101,10 @@ export default function App() {
   }, [menuOpen]);
 
   useEffect(() => {
-    if (!connection) setPhysicalKeys(null);
+    if (!connection) {
+      setPhysicalKeys(null);
+      clearKeyTesterStudioSnapshot();
+    }
   }, [connection]);
 
   useEffect(() => {
@@ -243,6 +250,11 @@ export default function App() {
     const nextDeviceName = deviceInfoResponse.core?.getDeviceInfo?.name?.trim() || 'ZMK Keyboard';
     debug('Device info loaded', { name: nextDeviceName });
     setConnectedDeviceName(nextDeviceName);
+    setKeyTesterStudioSnapshot({
+      deviceName: nextDeviceName,
+      physicalKeys: keys ?? [],
+      baseLayer: keymapResponse.keymap?.getKeymap?.layers?.[0] ?? null,
+    });
 
     setSubsystems(detected);
     setPhysicalKeys(keys);
