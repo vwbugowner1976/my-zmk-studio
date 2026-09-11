@@ -1,0 +1,52 @@
+.ble-management-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  order: 70;
+}
+.ble-management-menu-item > span:first-child {
+  width: 1.1em;
+  text-align: center;
+}
+
+/* The old placeholder is the sixth built-in nav item. BLE Management now uses
+   the live portal item above, so hide only that placeholder. */
+.tool-nav > .nav-item:nth-child(6) { display: none; }
+.tool-nav > .nav-item:nth-child(7) { order: 110; margin-top: 14px; padding-top: 14px; border-top: 1px solid #263244; }
+.tool-nav > .nav-item:nth-child(8) { order: 120; }
+
+.ble-management-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 898;
+  overflow: auto;
+  padding: 26px;
+  background: rgba(5, 8, 11, .72);
+  backdrop-filter: blur(8px);
+}
+
+.ble-management-window {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  padding: 20px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 18px;
+  background: var(--panel, #10151b);
+  box-shadow: 0 30px 90px rgba(0,0,0,.45);
+}
+
+.ble-management-window-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 16px;
+}
+.ble-management-window-head h2 { margin: 2px 0 4px; }
+.ble-management-window-head p { margin: 0; color: var(--muted, #7d8792); }
+
+@media (max-width: 720px) {
+  .ble-management-overlay { padding: 10px; }
+  .ble-management-window { padding: 12px; }
+  .ble-management-window-head { flex-direction: column; }
+}
