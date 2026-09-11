@@ -150,6 +150,7 @@ export default function KeyPicker({
   contextLabel,
   title = 'Choose output',
   description,
+  layerNames = [],
 }: {
   position?: number;
   currentBinding: BehaviorBinding;
@@ -160,6 +161,7 @@ export default function KeyPicker({
   contextLabel?: string;
   title?: string;
   description?: string;
+  layerNames?: string[];
 }) {
   const [layout, setLayout] = useState<PickerLayout>(loadLayout);
   const [binding, setBinding] = useState<BehaviorBinding>({ ...currentBinding });
@@ -274,12 +276,14 @@ export default function KeyPicker({
               param={1}
               value={binding.param1}
               onChange={(param1) => setBinding({ ...binding, param1 })}
+              layerNames={layerNames}
             />
             <BehaviorParamEditor
               option={selectedBehavior}
               param={2}
               value={binding.param2}
               onChange={(param2) => setBinding({ ...binding, param2 })}
+              layerNames={layerNames}
             />
           </div>
           <button type="button" className="button metadata-use-binding" disabled={busy} onClick={() => onChooseBinding(binding)}>
