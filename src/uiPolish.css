@@ -1,0 +1,146 @@
+.topbar > .topbar-brand {
+  order: 0;
+}
+
+.topbar > .language-switcher {
+  order: 1;
+  margin-left: auto;
+}
+
+.topbar > .button {
+  order: 2;
+  flex: 0 0 auto;
+  margin-left: 8px;
+}
+
+.layer-viewer > .key-picker-panel {
+  position: fixed;
+  top: 92px;
+  right: 18px;
+  bottom: 18px;
+  z-index: 120;
+  width: min(700px, 44vw);
+  max-height: calc(100vh - 110px);
+  overflow: auto;
+  padding: 16px;
+  border-color: #3b82f6;
+  border-radius: 14px;
+  background: #0b1220;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .52);
+  scrollbar-gutter: stable;
+}
+
+.layer-viewer > .key-picker-panel .key-picker-heading {
+  position: sticky;
+  top: -16px;
+  z-index: 4;
+  margin: -16px -16px 0;
+  padding: 16px;
+  border-bottom: 1px solid #263244;
+  background: rgba(11, 18, 32, .98);
+  backdrop-filter: blur(12px);
+}
+
+.layer-viewer > .key-picker-panel .key-picker-heading h3 {
+  font-size: 19px;
+}
+
+.layer-viewer > .key-picker-panel .key-picker-heading p {
+  max-width: 430px;
+  font-size: 11px;
+}
+
+.layer-viewer > .key-picker-panel .binding-category-tabs {
+  position: sticky;
+  top: 92px;
+  z-index: 3;
+  margin: 0 -2px;
+  padding: 8px 2px;
+  background: #0b1220;
+}
+
+.layer-viewer > .key-picker-panel .binding-category-tabs button {
+  padding: 8px 10px;
+  font-size: 11px;
+}
+
+.layer-viewer > .key-picker-panel .standard-keyboard-picker {
+  gap: 5px;
+  padding: 10px;
+}
+
+.layer-viewer > .key-picker-panel .standard-keyboard-row {
+  gap: 4px;
+}
+
+.layer-viewer > .key-picker-panel .key-picker-key {
+  min-width: 38px;
+  min-height: 36px;
+  padding: 5px 6px;
+}
+
+.layer-viewer > .key-picker-panel .keyboard-layout-key {
+  flex-basis: calc(var(--key-units, 1) * 38px);
+  min-width: calc(var(--key-units, 1) * 38px);
+}
+
+.layer-viewer > .key-picker-panel .keyboard-layout-key strong {
+  font-size: 10px;
+}
+
+.layer-viewer > .key-picker-panel .keyboard-layout-key small {
+  font-size: 8px;
+}
+
+.layer-viewer > .key-picker-panel .binding-param-grid {
+  grid-template-columns: 1fr;
+}
+
+.layer-viewer > .key-picker-panel .binding-behavior-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.layer-viewer > .key-picker-panel .behavior-param-card {
+  padding: 11px;
+}
+
+.layer-viewer > .key-picker-panel .behavior-hid-keyboard {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.layer-viewer > .key-picker-panel .behavior-hid-row {
+  width: max-content;
+}
+
+.layer-viewer > .key-picker-panel .metadata-use-binding {
+  position: sticky;
+  bottom: -16px;
+  z-index: 4;
+  justify-self: stretch;
+  width: calc(100% + 32px);
+  margin: 2px -16px -16px;
+  padding: 13px 16px;
+  border-radius: 0 0 14px 14px;
+}
+
+@media (max-width: 1180px) {
+  .layer-viewer > .key-picker-panel {
+    width: min(620px, 52vw);
+  }
+}
+
+@media (max-width: 860px) {
+  .layer-viewer > .key-picker-panel {
+    left: 12px;
+    right: 12px;
+    top: 82px;
+    bottom: 12px;
+    width: auto;
+    max-height: none;
+  }
+
+  .layer-viewer > .key-picker-panel .binding-behavior-grid {
+    grid-template-columns: 1fr;
+  }
+}
