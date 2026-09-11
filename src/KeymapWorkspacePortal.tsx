@@ -116,32 +116,20 @@ export default function KeymapWorkspacePortal() {
     menuHost,
   ) : null;
 
-  // Keep this portal mounted even while Backup is open. The editor toolbar is only
-  // hidden by CSS in backup mode, so the same button is immediately visible again
-  // when returning to Edit without needing to rediscover/remount the toolbar host.
   const toolbarAction = toolbarHost ? createPortal(
     <button
       type="button"
       className="button secondary keymap-toolbar-backup-button"
-      onClick={() => setBackupOpen(true)}
+      onClick={() => setBackupOpen((value) => !value)}
       disabled={!connection}
     >
-      Backup / Restore
+      {backupOpen ? '← Back to Edit' : 'Backup / Restore'}
     </button>,
     toolbarHost,
   ) : null;
 
   const workspace = host && backupOpen ? createPortal(
     <div className="keymap-workspace-portal">
-      <div className="keymap-workspace-actions backup-open">
-        <button
-          type="button"
-          className="button secondary"
-          onClick={() => setBackupOpen(false)}
-        >
-          ← Back to Keymap
-        </button>
-      </div>
       {connection && (
         <div className="keymap-backup-embedded">
           <KeymapBackup
