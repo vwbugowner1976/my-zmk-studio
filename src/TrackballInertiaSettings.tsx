@@ -79,6 +79,10 @@ function initialDrafts(): Record<ProfileId, Values> {
   };
 }
 
+function sameValues(a: Values, b: Values) {
+  return a.enabled === b.enabled && a.start === b.start && a.move === b.move && a.stop === b.stop;
+}
+
 export default function TrackballInertiaSettings({
   connection,
   customSettingsSubsystemIndex,
@@ -92,6 +96,7 @@ export default function TrackballInertiaSettings({
 }) {
   const [settings, setSettings] = useState<CustomSettingRecord[]>([]);
   const [drafts, setDrafts] = useState<Record<ProfileId, Values>>(initialDrafts);
+  const [selectedProfileId, setSelectedProfileId] = useState<ProfileId>('lscroll');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -103,6 +108,24 @@ export default function TrackballInertiaSettings({
     () => PROFILES.filter((profile) => Object.values(profile.keys).every((key) => byKey.has(key))),
     [byKey],
   );
+
+  const selectedProfile = useMemo(
+    () => availableProfiles.find((profile) => profile.id === selectedProfileId) ?? availableProfiles[0] ?? null,
+    [availableProfiles, selectedProfileId],
+  );
+
+  function savedValues(profile: ProfileDef): Values {
+    const enabled = valueOf(byKey.get(profile.keys.enabled));
+    const start = valueOf(byKey.get(profile.keys.start));
+    const move = valueOf(byKey.get(profile.keys.move));
+    const stop = valueOf(byKey.get(profile.keys.stop));
+    return {
+      enabled: enabled?.type === 'bool' ? enabled.value : profile.defaults.enabled,
+      start: start?.type === 'int32' ? start.value : profile.defaults.start,
+      move: move?.type === 'int32' ? move.value : profile.defaults.move,
+      stop: stop?.type === 'int32' ? stop.value : profile.defaults.stop,
+    };
+  }
 
   function syncDraft(next: CustomSettingRecord[]) {
     const map = new Map(next.map((setting) => [setting.key, setting]));
@@ -166,7 +189,7 @@ export default function TrackballInertiaSettings({
       publishSettings();
       const found = receivedRef.current.size;
       setMessage(found === INERTIA_KEY_SET.size
-        ? 'Left Base / Left Sym / Right Sym inertia controls ready.'
+        ? 'Scroll inertia controls ready.'
         : `Firmware returned ${found}/${INERTIA_KEY_SET.size} inertia setting(s) (${status.affectedCount} total settings).`);
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : String(cause);
@@ -199,6 +222,12 @@ export default function TrackballInertiaSettings({
     return unsubscribe;
   }, [connection, customSettingsSubsystemIndex, runtimeInputSubsystemIndex]);
 
+  useEffect(() => {
+    if (availableProfiles.length > 0 && !availableProfiles.some((profile) => profile.id === selectedProfileId)) {
+      setSelectedProfileId(availableProfiles[0].id);
+    }
+  }, [availableProfiles, selectedProfileId]);
+
   async function persist(key: string, value: { type: 'int32'; value: number } | { type: 'bool'; value: boolean }) {
     const setting = byKey.get(key);
     if (!setting) throw new Error(`Firmware setting not found: ${key}`);
@@ -215,7 +244,7 @@ export default function TrackballInertiaSettings({
       await persist(profile.keys.start, { type: 'int32', value: draft.start });
       await persist(profile.keys.move, { type: 'int32', value: draft.move });
       await persist(profile.keys.stop, { type: 'int32', value: draft.stop });
-      setMessage(`${profile.label} inertia saved. It takes effect from the next idle gesture.`);
+      setMessage(`${profile.label} inertia saved.`);
       await load();
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : String(cause);
@@ -243,48 +272,157 @@ export default function TrackballInertiaSettings({
     );
   }
 
+  if (!selectedProfile) return null;
+
+  const draft = drafts[selectedProfile.id];
+  const saved = savedValues(selectedProfile);
+  const dirty = !sameValues(draft, saved);
+
   return (
     <div className="trackball-inertia panel">
       <div className="trackball-inertia-heading">
-        <div><strong>Scroll Inertia</strong><small>Runtime inertia follows the live trackball speed profile.</small></div>
-        <button className="button secondary" onClick={() => void load()} disabled={busy}>Reload all</button>
+        <div>
+          <strong>Scroll Inertia</strong>
+          <small>Choose a scroll mode, then tune how easily momentum starts and how long it continues.</small>
+        </div>
+        <button className="button secondary" onClick={() => void load()} disabled={busy}>Reload</button>
       </div>
 
-      <div className="trackball-inertia-profiles">
-        {availableProfiles.map((profile) => {
-          const draft = drafts[profile.id];
-          return (
-            <section className="trackball-inertia-profile" key={profile.id}>
-              <div className="trackball-inertia-profile-heading">
-                <div><strong>{profile.label}</strong><small>{profile.subtitle}</small></div>
-                <label className="trackball-inertia-toggle">
-                  <input type="checkbox" checked={draft.enabled} disabled={busy}
-                    onChange={(event) => updateDraft(profile.id, { enabled: event.target.checked })} />
-                  <span>{draft.enabled ? 'On' : 'Off'}</span>
-                </label>
-              </div>
-
-              <div className="trackball-inertia-grid">
-                <label><span>Start <small>Flick strength</small></span>
-                  <input type="number" min={1} max={200} value={draft.start} disabled={busy}
-                    onChange={(event) => updateDraft(profile.id, { start: Number(event.target.value) })} /></label>
-                <label><span>Move <small>Gesture distance</small></span>
-                  <input type="number" min={1} max={500} value={draft.move} disabled={busy}
-                    onChange={(event) => updateDraft(profile.id, { move: Number(event.target.value) })} /></label>
-                <label><span>Stop <small>End threshold</small></span>
-                  <input type="number" min={0} max={50} value={draft.stop} disabled={busy}
-                    onChange={(event) => updateDraft(profile.id, { stop: Number(event.target.value) })} /></label>
-              </div>
-
-              <div className="trackball-actions">
-                <button className="button" onClick={() => void applyAndSave(profile)} disabled={busy}>
-                  {busy ? 'Saving…' : 'Apply & Save'}
-                </button>
-              </div>
-            </section>
-          );
-        })}
+      <div className="trackball-inertia-tabs" role="tablist" aria-label="Scroll inertia profiles">
+        {availableProfiles.map((profile) => (
+          <button
+            key={profile.id}
+            type="button"
+            role="tab"
+            aria-selected={profile.id === selectedProfile.id}
+            className={`trackball-inertia-tab ${profile.id === selectedProfile.id ? 'selected' : ''}`}
+            onClick={() => setSelectedProfileId(profile.id)}
+            disabled={busy}
+          >
+            <strong>{profile.label}</strong>
+            <small>{profile.subtitle}</small>
+          </button>
+        ))}
       </div>
+
+      <section className="trackball-inertia-editor">
+        <div className="trackball-inertia-editor-heading">
+          <div>
+            <div className="eyebrow">{selectedProfile.subtitle}</div>
+            <h3>{selectedProfile.label}</h3>
+          </div>
+          <label className="trackball-inertia-toggle">
+            <input
+              type="checkbox"
+              checked={draft.enabled}
+              disabled={busy}
+              onChange={(event) => updateDraft(selectedProfile.id, { enabled: event.target.checked })}
+            />
+            <span>{draft.enabled ? 'Inertia On' : 'Inertia Off'}</span>
+          </label>
+        </div>
+
+        <div className={`trackball-inertia-controls ${draft.enabled ? '' : 'disabled-look'}`}>
+          <label className="trackball-inertia-control">
+            <span className="trackball-inertia-control-title">
+              <span><strong>Trigger</strong><small>How strong the flick must be</small></span>
+              <input
+                type="number"
+                min={1}
+                max={200}
+                value={draft.start}
+                disabled={busy || !draft.enabled}
+                onChange={(event) => updateDraft(selectedProfile.id, { start: Number(event.target.value) })}
+              />
+            </span>
+            <div className="trackball-inertia-slider-labels"><span>Easier</span><span>Harder</span></div>
+            <input
+              className="trackball-inertia-slider"
+              type="range"
+              min={1}
+              max={80}
+              step={1}
+              value={Math.min(80, draft.start)}
+              disabled={busy || !draft.enabled}
+              onChange={(event) => updateDraft(selectedProfile.id, { start: Number(event.target.value) })}
+            />
+          </label>
+
+          <label className="trackball-inertia-control">
+            <span className="trackball-inertia-control-title">
+              <span><strong>Gesture</strong><small>Movement needed before momentum can arm</small></span>
+              <input
+                type="number"
+                min={1}
+                max={500}
+                value={draft.move}
+                disabled={busy || !draft.enabled}
+                onChange={(event) => updateDraft(selectedProfile.id, { move: Number(event.target.value) })}
+              />
+            </span>
+            <div className="trackball-inertia-slider-labels"><span>Shorter</span><span>Longer</span></div>
+            <input
+              className="trackball-inertia-slider"
+              type="range"
+              min={1}
+              max={120}
+              step={1}
+              value={Math.min(120, draft.move)}
+              disabled={busy || !draft.enabled}
+              onChange={(event) => updateDraft(selectedProfile.id, { move: Number(event.target.value) })}
+            />
+          </label>
+
+          <label className="trackball-inertia-control">
+            <span className="trackball-inertia-control-title">
+              <span><strong>Tail</strong><small>Threshold where momentum finally stops</small></span>
+              <input
+                type="number"
+                min={0}
+                max={50}
+                value={draft.stop}
+                disabled={busy || !draft.enabled}
+                onChange={(event) => updateDraft(selectedProfile.id, { stop: Number(event.target.value) })}
+              />
+            </span>
+            <div className="trackball-inertia-slider-labels"><span>Longer</span><span>Stops sooner</span></div>
+            <input
+              className="trackball-inertia-slider"
+              type="range"
+              min={0}
+              max={20}
+              step={1}
+              value={Math.min(20, draft.stop)}
+              disabled={busy || !draft.enabled}
+              onChange={(event) => updateDraft(selectedProfile.id, { stop: Number(event.target.value) })}
+            />
+          </label>
+        </div>
+
+        <div className="trackball-inertia-footer">
+          <div className="trackball-inertia-saved">
+            <span>Saved</span>
+            <strong>{saved.enabled ? 'On' : 'Off'} · {saved.start} / {saved.move} / {saved.stop}</strong>
+            {dirty && <em>Unsaved changes</em>}
+          </div>
+          <div className="trackball-actions">
+            <button
+              className="button secondary"
+              disabled={busy || !dirty}
+              onClick={() => updateDraft(selectedProfile.id, saved)}
+            >
+              Reset
+            </button>
+            <button
+              className="button"
+              onClick={() => void applyAndSave(selectedProfile)}
+              disabled={busy || !dirty}
+            >
+              {busy ? 'Saving…' : 'Apply & Save'}
+            </button>
+          </div>
+        </div>
+      </section>
 
       {message && <div className="status-strip"><span>{message}</span></div>}
       {error && <div className="notice">{error}</div>}
