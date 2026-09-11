@@ -1,28 +1,13 @@
-.key-tester-launcher {
-  position: fixed;
-  right: 18px;
-  bottom: 18px;
-  z-index: 900;
-  display: inline-flex;
+.key-tester-menu-item {
+  display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid rgba(255,255,255,.14);
-  border-radius: 999px;
-  padding: 10px 14px;
-  background: rgba(18, 23, 29, .94);
-  color: inherit;
-  box-shadow: 0 12px 34px rgba(0,0,0,.28);
-  cursor: pointer;
-  backdrop-filter: blur(12px);
 }
 
-.key-tester-launcher.active,
-.key-tester-launcher:hover {
-  border-color: rgba(70, 200, 165, .7);
-  background: rgba(28, 63, 55, .96);
+.key-tester-menu-item > span:first-child {
+  width: 1.1em;
+  text-align: center;
 }
-
-.key-tester-launcher span { font-weight: 700; }
 
 .key-tester-overlay {
   position: fixed;
@@ -58,5 +43,4 @@
 @media (max-width: 720px) {
   .key-tester-overlay { padding: 10px; }
   .key-tester-window { padding: 12px; }
-  .key-tester-launcher span { display: none; }
 }
