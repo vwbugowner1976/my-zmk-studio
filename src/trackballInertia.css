@@ -78,6 +78,41 @@
   font-weight: 600;
 }
 
+.trackball-inertia-help {
+  margin-bottom: 16px;
+  padding: 13px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 12px;
+  background: rgba(148, 163, 184, 0.045);
+}
+
+.trackball-inertia-help > strong {
+  display: block;
+  margin-bottom: 9px;
+}
+
+.trackball-inertia-help-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.trackball-inertia-help-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trackball-inertia-help-grid b {
+  font-size: 0.84rem;
+}
+
+.trackball-inertia-help-grid span {
+  font-size: 0.78rem;
+  line-height: 1.55;
+  opacity: 0.7;
+}
+
 .trackball-inertia-controls {
   display: grid;
   gap: 16px;
@@ -155,7 +190,8 @@
 }
 
 @media (max-width: 760px) {
-  .trackball-inertia-tabs {
+  .trackball-inertia-tabs,
+  .trackball-inertia-help-grid {
     grid-template-columns: 1fr;
   }
 
