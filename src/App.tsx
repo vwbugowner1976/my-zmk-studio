@@ -137,11 +137,10 @@ export default function App() {
     };
   }, [studioLocked, connection]);
 
-
   function debug(event: string, detail?: unknown) {
     const timestamp = new Date().toISOString().slice(11, 23);
     const suffix = detail === undefined ? '' : ` ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`;
-    console.info(`[MyZMKStudio] ${timestamp} ${event}${suffix}`);
+    console.info(`[MyKeebStudio] ${timestamp} ${event}${suffix}`);
   }
 
   async function callRuntimeCombo(
@@ -462,9 +461,9 @@ export default function App() {
   }
 
   const title = activeTool === 'layer-viewer'
-    ? 'Layer Viewer'
+    ? 'Keymap'
     : activeTool === 'keymap-backup'
-      ? 'Keymap Backup'
+      ? 'Keymap'
       : activeTool === 'custom-settings'
         ? 'Custom Settings'
         : activeTool === 'trackball'
@@ -487,7 +486,7 @@ export default function App() {
           <button className="menu-toggle" type="button" onClick={() => setMenuOpen((value) => !value)} title={menuOpen ? 'Hide menu' : 'Show menu'}>☰</button>
           <div>
             <div className="eyebrow">ZMK firmware inspector</div>
-            <h1>My ZMK Studio <small className="version-badge">v0.6</small></h1>
+            <h1>MyKeebStudio <small className="version-badge">v0.6</small></h1>
           </div>
         </div>
         <button className={connected ? 'button secondary' : 'button'} onClick={connected ? disconnectUsb : connectUsb} disabled={busy || (!connected && !serialSupported)}>
@@ -506,7 +505,7 @@ export default function App() {
             <div className="section-title tool-title">Tools</div>
             <nav className="nav-list tool-nav">
               <button className={`nav-item ${activeTool === 'runtime-combo' ? 'active' : ''}`} onClick={() => setActiveTool('runtime-combo')}>Runtime Combo</button>
-              <button className={`nav-item ${activeTool === 'layer-viewer' ? 'active' : ''}`} onClick={() => setActiveTool('layer-viewer')}>Layer Viewer</button>
+              <button className={`nav-item ${activeTool === 'layer-viewer' ? 'active' : ''}`} onClick={() => setActiveTool('layer-viewer')}>Keymap</button>
               <button className={`nav-item ${activeTool === 'keymap-backup' ? 'active' : ''}`} onClick={() => setActiveTool('keymap-backup')}>Keymap Backup</button>
               <button className={`nav-item ${activeTool === 'custom-settings' ? 'active' : ''}`} onClick={() => setActiveTool('custom-settings')}>Custom Settings</button>
               <button className={`nav-item ${activeTool === 'trackball' ? 'active' : ''}`} onClick={() => setActiveTool('trackball')} disabled={!runtimeInput}>Trackball</button>
@@ -537,7 +536,7 @@ export default function App() {
               <div>
                 <h3>ZMK Studio is locked</h3>
                 <p>This keyboard requires Studio Unlock before keymap and behavior data can be read.</p>
-                <p>Press the key mapped to <code>&amp;studio_unlock</code> on the keyboard. My Keeb Studio will continue automatically when it is unlocked.</p>
+                <p>Press the key mapped to <code>&amp;studio_unlock</code> on the keyboard. MyKeebStudio will continue automatically when it is unlocked.</p>
                 <div className="actions">
                   <button className="button secondary" onClick={() => void disconnectUsb()} disabled={busy}>Disconnect</button>
                 </div>
