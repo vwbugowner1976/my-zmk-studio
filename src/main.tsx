@@ -5,6 +5,7 @@ import DebugConsole from './DebugConsole';
 import KeyTesterPortal from './KeyTesterPortal';
 import SensorBindingsPortal from './SensorBindingsPanel';
 import { installDeviceExportNaming } from './deviceIdentity';
+import { LanguageProvider, LanguageSwitcher } from './i18n';
 import './styles.css';
 import './layerViewer.css';
 import './sensorBindings.css';
@@ -15,14 +16,18 @@ import './v05.css';
 import './keymapDiffGuide.css';
 import './debugConsoleOverride.css';
 import './deviceName.css';
+import './language.css';
 
 installDeviceExportNaming();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
-    <SensorBindingsPortal />
-    <DebugConsole />
-    <KeyTesterPortal />
+    <LanguageProvider>
+      <App />
+      <LanguageSwitcher />
+      <SensorBindingsPortal />
+      <DebugConsole />
+      <KeyTesterPortal />
+    </LanguageProvider>
   </React.StrictMode>,
 );
