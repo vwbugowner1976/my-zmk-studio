@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { call_rpc, type RpcConnection } from '@zmkfirmware/zmk-studio-ts-client';
 import type { BehaviorBindingParametersSet } from '@zmkfirmware/zmk-studio-ts-client/behaviors';
+import { setSharedStudioConnection } from './studioConnectionRegistry';
 
 export type BehaviorOption = {
   id: number;
@@ -10,6 +11,13 @@ export type BehaviorOption = {
 
 export function useBehaviorOptions(connection: RpcConnection | null | undefined) {
   const [options, setOptions] = useState<BehaviorOption[] | null>(null);
+
+  useEffect(() => {
+    setSharedStudioConnection(connection ?? null);
+    return () => {
+      setSharedStudioConnection(null);
+    };
+  }, [connection]);
 
   useEffect(() => {
     if (!connection) {
