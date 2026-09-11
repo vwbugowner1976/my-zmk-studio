@@ -139,35 +139,43 @@ export default function BLEManagement({ connection, subsystemIndex, onDebug }: P
                 <span className={`ble-badge ${profile.bonded ? 'bonded' : 'empty'}`}>
                   {profile.bonded ? (isJapanese ? '登録済み' : 'Bonded') : (isJapanese ? '空き' : 'Empty')}
                 </span>
-                {profile.open && !profile.bonded && <span className="ble-pairing-hint">{isJapanese ? 'ペアリング可' : 'Pairable'}</span>}
+                {!profile.bonded && profile.open && <span className="ble-pairing-hint">{isJapanese ? 'ペアリング可' : 'Pairable'}</span>}
               </div>
 
               <div className="ble-profile-connection">
-                <span className={`ble-badge ${profile.connected ? 'connected' : 'disconnected'}`}>
-                  {profile.connected ? (isJapanese ? '接続中' : 'Connected') : (isJapanese ? '未接続' : 'Disconnected')}
-                </span>
+                {profile.bonded ? (
+                  <span className={`ble-badge ${profile.connected ? 'connected' : 'disconnected'}`}>
+                    {profile.connected ? (isJapanese ? '接続中' : 'Connected') : (isJapanese ? '未接続' : 'Disconnected')}
+                  </span>
+                ) : (
+                  <span className="ble-empty-connection" aria-label={isJapanese ? '未登録' : 'Not paired'}>—</span>
+                )}
               </div>
 
               <div className="ble-profile-actions compact">
                 <button className="button small" type="button" disabled={busy || profile.active} onClick={() => void runCommand('select', profile.index)}>
                   {isJapanese ? '選択' : 'Select'}
                 </button>
-                <button className="button secondary small" type="button" disabled={busy || !profile.connected} onClick={() => void runCommand('disconnect', profile.index)}>
-                  {isJapanese ? '切断' : 'Disconnect'}
-                </button>
-                <button
-                  className="button danger small"
-                  type="button"
-                  disabled={busy || !profile.bonded}
-                  onClick={() => {
-                    const ok = window.confirm(isJapanese
-                      ? `BLEプロファイル #${profile.index} のボンド情報を消去しますか？\n再ペアリングが必要になります。`
-                      : `Clear bond information for BLE profile #${profile.index}?\nPairing will be required again.`);
-                    if (ok) void runCommand('clear', profile.index);
-                  }}
-                >
-                  {isJapanese ? '消去' : 'Clear'}
-                </button>
+                {profile.bonded && (
+                  <>
+                    <button className="button secondary small" type="button" disabled={busy || !profile.connected} onClick={() => void runCommand('disconnect', profile.index)}>
+                      {isJapanese ? '切断' : 'Disconnect'}
+                    </button>
+                    <button
+                      className="button danger small"
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        const ok = window.confirm(isJapanese
+                          ? `BLEプロファイル #${profile.index} のボンド情報を消去しますか？\n再ペアリングが必要になります。`
+                          : `Clear bond information for BLE profile #${profile.index}?\nPairing will be required again.`);
+                        if (ok) void runCommand('clear', profile.index);
+                      }}
+                    >
+                      {isJapanese ? '消去' : 'Clear'}
+                    </button>
+                  </>
+                )}
               </div>
             </article>
           ))}
