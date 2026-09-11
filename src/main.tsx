@@ -5,6 +5,7 @@ import DebugConsole from './DebugConsole';
 import KeyTesterPortal from './KeyTesterPortal';
 import BLEManagementPortal from './BLEManagementPortal';
 import SensorBindingsPortal from './SensorBindingsPanel';
+import HeaderIdentity from './HeaderIdentity';
 import { installDeviceExportNaming } from './deviceIdentity';
 import { LanguageProvider, LanguageSwitcher } from './i18n';
 import './styles.css';
@@ -19,6 +20,7 @@ import './debugConsoleOverride.css';
 import './deviceName.css';
 import './language.css';
 import './uiPolish.css';
+import './headerIdentity.css';
 
 installDeviceExportNaming();
 
@@ -26,6 +28,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <LanguageProvider>
       <App />
+      <HeaderIdentity />
       <LanguageSwitcher />
       <SensorBindingsPortal />
       <DebugConsole />
