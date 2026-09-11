@@ -120,6 +120,10 @@ export default function BehaviorParamEditor({
   const hid = descriptions.find((item) => item.hidUsage)?.hidUsage;
   const nilOnly = descriptions.length > 0 && descriptions.every((item) => !!item.nil);
   const label = `Param ${param}`;
+  const visibleLayerNames = typeof document === 'undefined'
+    ? []
+    : Array.from(document.querySelectorAll<HTMLElement>('.layer-tab span')).map((node) => node.textContent?.trim() || '');
+  const resolvedLayerNames = layerNames.length ? layerNames : visibleLayerNames;
 
   if (nilOnly) {
     return (
@@ -160,16 +164,16 @@ export default function BehaviorParamEditor({
       {layer && (
         <label className="behavior-param-input">
           Layer
-          {layerNames.length ? (
+          {resolvedLayerNames.length ? (
             <select value={value} onChange={(event) => onChange(Number(event.target.value))}>
-              {layerNames.map((name, index) => (
+              {resolvedLayerNames.map((name, index) => (
                 <option key={`${index}:${name}`} value={index}>{name || `Layer ${index}`}</option>
               ))}
             </select>
           ) : (
             <input type="number" min={0} value={value} onChange={(event) => onChange(Number(event.target.value))} />
           )}
-          {layerNames[value] && <small>Layer {value} · {layerNames[value]}</small>}
+          {resolvedLayerNames[value] && <small>Layer {value} · {resolvedLayerNames[value]}</small>}
         </label>
       )}
 
