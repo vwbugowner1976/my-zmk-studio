@@ -28,6 +28,8 @@ type PhysicalKey = {
 
 type LayoutMode = 'physical' | 'jis' | 'us';
 
+type WheelPulse = 'up' | 'down' | 'left' | 'right' | null;
+
 const US_ROWS = [
   ['Escape', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'],
   ['Backquote', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal', 'Backspace'],
@@ -48,21 +50,56 @@ const JIS_ROWS = [
   ['Insert', 'Home', 'PageUp', 'Delete', 'End', 'PageDown', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight'],
 ];
 
+const SPECIAL_CODES = [
+  'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight',
+  'PrintScreen', 'ScrollLock', 'Pause', 'Insert', 'Home', 'PageUp', 'Delete', 'End', 'PageDown', 'ContextMenu',
+  'NumLock', 'NumpadDivide', 'NumpadMultiply', 'NumpadSubtract', 'NumpadAdd', 'NumpadEnter',
+  'IntlYen', 'IntlRo', 'NonConvert', 'Convert', 'KanaMode', 'Lang1', 'Lang2',
+  'AudioVolumeMute', 'AudioVolumeDown', 'AudioVolumeUp',
+  'MediaTrackPrevious', 'MediaTrackNext', 'MediaStop', 'MediaPlayPause',
+];
+
+const MOUSE_BUTTONS = [
+  { button: 0, label: 'Left', code: 'MouseLeft' },
+  { button: 1, label: 'Middle', code: 'MouseMiddle' },
+  { button: 2, label: 'Right', code: 'MouseRight' },
+  { button: 3, label: 'Back', code: 'MouseBack' },
+  { button: 4, label: 'Forward', code: 'MouseForward' },
+];
+
 const HID_TO_CODE: Record<number, string> = {
   40: 'Enter', 41: 'Escape', 42: 'Backspace', 43: 'Tab', 44: 'Space',
   45: 'Minus', 46: 'Equal', 47: 'BracketLeft', 48: 'BracketRight', 49: 'Backslash',
   51: 'Semicolon', 52: 'Quote', 53: 'Backquote', 54: 'Comma', 55: 'Period', 56: 'Slash',
-  57: 'CapsLock', 73: 'Insert', 74: 'Home', 75: 'PageUp', 76: 'Delete', 77: 'End', 78: 'PageDown',
-  79: 'ArrowRight', 80: 'ArrowLeft', 81: 'ArrowDown', 82: 'ArrowUp',
+  57: 'CapsLock', 70: 'PrintScreen', 71: 'ScrollLock', 72: 'Pause',
+  73: 'Insert', 74: 'Home', 75: 'PageUp', 76: 'Delete', 77: 'End', 78: 'PageDown',
+  79: 'ArrowRight', 80: 'ArrowLeft', 81: 'ArrowDown', 82: 'ArrowUp', 83: 'NumLock',
+  84: 'NumpadDivide', 85: 'NumpadMultiply', 86: 'NumpadSubtract', 87: 'NumpadAdd', 88: 'NumpadEnter',
+  89: 'Numpad1', 90: 'Numpad2', 91: 'Numpad3', 92: 'Numpad4', 93: 'Numpad5',
+  94: 'Numpad6', 95: 'Numpad7', 96: 'Numpad8', 97: 'Numpad9', 98: 'Numpad0', 99: 'NumpadDecimal',
+  101: 'ContextMenu',
+  127: 'AudioVolumeMute', 128: 'AudioVolumeUp', 129: 'AudioVolumeDown',
   137: 'IntlYen', 138: 'IntlRo', 139: 'KanaMode', 140: 'Convert', 141: 'NonConvert',
+  144: 'Lang1', 145: 'Lang2',
   224: 'ControlLeft', 225: 'ShiftLeft', 226: 'AltLeft', 227: 'MetaLeft',
   228: 'ControlRight', 229: 'ShiftRight', 230: 'AltRight', 231: 'MetaRight',
+};
+
+const CONSUMER_TO_CODE: Record<number, string> = {
+  0xB5: 'MediaTrackNext',
+  0xB6: 'MediaTrackPrevious',
+  0xB7: 'MediaStop',
+  0xCD: 'MediaPlayPause',
+  0xE2: 'AudioVolumeMute',
+  0xE9: 'AudioVolumeUp',
+  0xEA: 'AudioVolumeDown',
 };
 
 for (let usage = 4; usage <= 29; usage += 1) HID_TO_CODE[usage] = `Key${String.fromCharCode(65 + usage - 4)}`;
 for (let usage = 30; usage <= 38; usage += 1) HID_TO_CODE[usage] = `Digit${usage - 29}`;
 HID_TO_CODE[39] = 'Digit0';
 for (let usage = 58; usage <= 69; usage += 1) HID_TO_CODE[usage] = `F${usage - 57}`;
+for (let usage = 104; usage <= 115; usage += 1) HID_TO_CODE[usage] = `F${usage - 91}`;
 
 const keyLabel = (code: string) => {
   const aliases: Record<string, string> = {
@@ -73,18 +110,23 @@ const keyLabel = (code: string) => {
     CapsLock: 'Caps', Backspace: 'Backspace', ContextMenu: 'Menu', Space: 'Space',
     PageUp: 'PgUp', PageDown: 'PgDn', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→',
     IntlYen: '¥ / |', IntlRo: 'ろ', NonConvert: '無変換', Convert: '変換', KanaMode: 'かな',
+    Lang1: 'Lang1', Lang2: 'Lang2', PrintScreen: 'PrtSc', ScrollLock: 'Scroll', Pause: 'Pause',
+    NumLock: 'Num', AudioVolumeMute: 'Mute', AudioVolumeDown: 'Vol -', AudioVolumeUp: 'Vol +',
+    MediaTrackPrevious: 'Prev', MediaTrackNext: 'Next', MediaStop: 'Stop', MediaPlayPause: 'Play/Pause',
   };
   if (aliases[code]) return aliases[code];
   if (code.startsWith('Key')) return code.slice(3);
   if (code.startsWith('Digit')) return code.slice(5);
+  if (code.startsWith('Numpad')) return code.replace('Numpad', 'KP ');
   return code;
 };
 
 function hidParamToCode(value: number): string | null {
   const page = (value >>> 16) & 0xff;
   const usage = value & 0xffff;
-  if (page !== 0x07) return null;
-  return HID_TO_CODE[usage] ?? null;
+  if (page === 0x07) return HID_TO_CODE[usage] ?? null;
+  if (page === 0x0c) return CONSUMER_TO_CODE[usage] ?? null;
+  return null;
 }
 
 function bindingToCode(binding: BehaviorBinding | undefined): string | null {
@@ -102,6 +144,9 @@ function physicalGeometry(keys: PhysicalKey[]) {
 export default function KeyTester() {
   const [pressed, setPressed] = useState<Set<string>>(() => new Set());
   const [seen, setSeen] = useState<Set<string>>(() => new Set());
+  const [mousePressed, setMousePressed] = useState<Set<number>>(() => new Set());
+  const [mouseSeen, setMouseSeen] = useState<Set<number>>(() => new Set());
+  const [wheelPulse, setWheelPulse] = useState<WheelPulse>(null);
   const [history, setHistory] = useState<KeyEntry[]>([]);
   const [eventId, setEventId] = useState(0);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(() => {
@@ -119,6 +164,8 @@ export default function KeyTester() {
   }, [layoutMode]);
 
   useEffect(() => {
+    let wheelTimer: number | null = null;
+
     const record = (event: KeyboardEvent, type: 'down' | 'up') => {
       if (type === 'down') {
         setPressed((current) => new Set(current).add(event.code));
@@ -151,15 +198,44 @@ export default function KeyTester() {
 
     const onKeyDown = (event: KeyboardEvent) => record(event, 'down');
     const onKeyUp = (event: KeyboardEvent) => record(event, 'up');
-    const clearPressed = () => setPressed(new Set());
+    const onMouseDown = (event: MouseEvent) => {
+      setMousePressed((current) => new Set(current).add(event.button));
+      setMouseSeen((current) => new Set(current).add(event.button));
+    };
+    const onMouseUp = (event: MouseEvent) => {
+      setMousePressed((current) => {
+        const next = new Set(current);
+        next.delete(event.button);
+        return next;
+      });
+    };
+    const onWheel = (event: WheelEvent) => {
+      const direction: WheelPulse = Math.abs(event.deltaY) >= Math.abs(event.deltaX)
+        ? event.deltaY < 0 ? 'up' : 'down'
+        : event.deltaX < 0 ? 'left' : 'right';
+      setWheelPulse(direction);
+      if (wheelTimer !== null) window.clearTimeout(wheelTimer);
+      wheelTimer = window.setTimeout(() => setWheelPulse(null), 220);
+    };
+    const clearPressed = () => {
+      setPressed(new Set());
+      setMousePressed(new Set());
+    };
 
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('wheel', onWheel, { passive: true });
     window.addEventListener('blur', clearPressed);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('wheel', onWheel);
       window.removeEventListener('blur', clearPressed);
+      if (wheelTimer !== null) window.clearTimeout(wheelTimer);
     };
   }, []);
 
@@ -186,15 +262,19 @@ export default function KeyTester() {
   const geometry = physicalKeys.length ? physicalGeometry(physicalKeys) : null;
   const showPhysical = layoutMode === 'physical' && !!studioSnapshot && !!geometry;
   const standardRows = layoutMode === 'jis' ? JIS_ROWS : US_ROWS;
+  const specialSeen = SPECIAL_CODES.filter((code) => seen.has(code));
 
   const reset = () => {
     setPressed(new Set());
     setSeen(new Set());
+    setMousePressed(new Set());
+    setMouseSeen(new Set());
+    setWheelPulse(null);
     setHistory([]);
   };
 
   return (
-    <div className="key-tester">
+    <div className="key-tester" onContextMenu={(event) => event.preventDefault()}>
       <section className="panel tester-summary">
         <div>
           <span className="tester-label">LAST INPUT</span>
@@ -202,11 +282,49 @@ export default function KeyTester() {
           <code>{last?.code || 'Waiting for keyboard input…'}</code>
         </div>
         <div className="tester-stats">
-          <div><span>Pressed now</span><strong>{pressed.size}</strong></div>
+          <div><span>Pressed now</span><strong>{pressed.size + mousePressed.size}</strong></div>
           <div><span>Keys seen</span><strong>{seen.size}</strong></div>
           <div><span>Modifiers</span><strong>{modifiers}</strong></div>
         </div>
         <button className="button secondary" type="button" onClick={reset}>Clear</button>
+      </section>
+
+      <section className="panel tester-input-monitor">
+        <div className="panel-heading">
+          <div>
+            <h3>Raw Input Monitor</h3>
+            <p>Shows browser-visible keyboard codes and mouse buttons even when they cannot be mapped onto the selected keyboard layout.</p>
+          </div>
+        </div>
+        <div className="tester-input-monitor-body">
+          <div className="tester-monitor-group">
+            <span className="tester-label">MOUSE</span>
+            <div className="tester-monitor-chips">
+              {MOUSE_BUTTONS.map(({ button, label, code }) => (
+                <div key={button} className={`tester-monitor-chip ${mousePressed.has(button) ? 'pressed' : ''} ${mouseSeen.has(button) ? 'seen' : ''}`} title={code}>
+                  <strong>{label}</strong><small>{code}</small>
+                </div>
+              ))}
+              {(['up', 'down', 'left', 'right'] as const).map((direction) => (
+                <div key={direction} className={`tester-monitor-chip wheel ${wheelPulse === direction ? 'pressed' : ''}`}>
+                  <strong>Wheel {direction}</strong><small>Wheel</small>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="tester-monitor-group">
+            <span className="tester-label">SPECIAL / MODIFIER KEYS</span>
+            <div className="tester-monitor-chips">
+              {SPECIAL_CODES.map((code) => (
+                <div key={code} className={`tester-monitor-chip ${pressed.has(code) ? 'pressed' : ''} ${seen.has(code) ? 'seen' : ''}`} title={code}>
+                  <strong>{keyLabel(code)}</strong><small>{code}</small>
+                </div>
+              ))}
+            </div>
+            {specialSeen.length === 0 && <p className="tester-monitor-note">No special/modifier key detected yet.</p>}
+          </div>
+        </div>
       </section>
 
       <section className="panel tester-layout-loader">
@@ -276,7 +394,7 @@ export default function KeyTester() {
               })}
             </div>
             <p className="tester-layout-note">
-              Keys whose Base-layer binding does not directly expose a keyboard HID usage are shown by position number and still appear in the input history.
+              Keys whose Base-layer binding does not directly expose a keyboard HID usage are shown by position number. Use Raw Input Monitor to confirm the actual browser-visible output.
             </p>
           </div>
         ) : (
@@ -301,11 +419,11 @@ export default function KeyTester() {
 
       <section className="panel tester-log-panel">
         <div className="panel-heading">
-          <div><h3>Input history</h3><p>Latest 80 key down/up events received by the browser.</p></div>
+          <div><h3>Keyboard input history</h3><p>Latest 80 keyboard key down/up events received by the browser.</p></div>
         </div>
         <div className="tester-log">
           {history.length === 0 ? (
-            <div className="tester-empty">No key events yet.</div>
+            <div className="tester-empty">No keyboard events yet.</div>
           ) : history.map((entry) => (
             <div className="tester-log-row" key={entry.id}>
               <span className={`tester-event ${entry.type}`}>{entry.type.toUpperCase()}</span>
