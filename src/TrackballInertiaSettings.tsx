@@ -223,10 +223,15 @@ export default function TrackballInertiaSettings({
   }, [connection, customSettingsSubsystemIndex, runtimeInputSubsystemIndex]);
 
   useEffect(() => {
+    // During reload the settings arrive as a notification stream. A different
+    // profile may become "available" first, but that must not steal selection
+    // from the profile the user was editing. Only repair the selection after
+    // the reload is fully finished and the selected profile is truly absent.
+    if (loading) return;
     if (availableProfiles.length > 0 && !availableProfiles.some((profile) => profile.id === selectedProfileId)) {
       setSelectedProfileId(availableProfiles[0].id);
     }
-  }, [availableProfiles, selectedProfileId]);
+  }, [availableProfiles, selectedProfileId, loading]);
 
   async function persist(key: string, value: { type: 'int32'; value: number } | { type: 'bool'; value: boolean }) {
     const setting = byKey.get(key);
