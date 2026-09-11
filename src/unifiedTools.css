@@ -78,6 +78,11 @@
   justify-content: flex-start;
 }
 
+.keymap-toolbar-backup-button {
+  order: -100;
+  margin-right: 4px;
+}
+
 .layer-viewer.keymap-backup-active > :not(.keymap-workspace-portal) {
   display: none !important;
 }
