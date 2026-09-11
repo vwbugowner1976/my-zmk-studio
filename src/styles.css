@@ -17,10 +17,28 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 18px;
   padding: 20px 28px;
   border-bottom: 1px solid #1f2937;
   background: #111827;
 }
+.topbar-tool-title {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin-left: 6px;
+  color: #94a3b8;
+}
+.topbar-tool-title strong {
+  overflow: hidden;
+  color: #f8fafc;
+  font-size: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.content-header.title-moved-to-topbar h2 { display: none; }
 
 h1, h2, p { margin: 0; }
 h1 { font-size: 22px; }
@@ -186,12 +204,13 @@ p { color: #9ca3af; margin-top: 8px; }
 @media (max-width: 600px) {
   .content { padding: 18px; }
   .topbar { padding: 16px 18px; }
+  .topbar-tool-title { order: 3; flex-basis: 100%; margin-left: 0; }
+  .topbar { flex-wrap: wrap; }
   .form-grid { grid-template-columns: 1fr; }
   .behavior-field { grid-column: span 1; }
   .global-debug-console { right: 10px; bottom: 10px; width: calc(100vw - 20px); }
   .global-debug-header { align-items: flex-start; flex-direction: column; }
 }
-
 
 .trackball-layout { display: grid; gap: 18px; }
 .trackball-mode-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -262,5 +281,3 @@ p { color: #9ca3af; margin-top: 8px; }
   .trackball-editor-heading { flex-direction: column; }
   .trackball-advanced-grid { grid-template-columns: 1fr; }
 }
-
-
