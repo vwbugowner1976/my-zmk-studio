@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { call_rpc, type RpcConnection } from '@zmkfirmware/zmk-studio-ts-client';
 import { subscribeNotifications } from './notificationHub';
+import { useLanguage } from './i18n';
 import {
   assertRuntimeInputResponse,
   decodeRuntimeInputNotification,
@@ -43,6 +44,7 @@ export default function RuntimeInputProcessor({
   layerNames: string[];
   onDebug: (event: string, detail?: unknown) => void;
 }) {
+  const { isJapanese } = useLanguage();
   const [processors, setProcessors] = useState<RuntimeInputProcessorRecord[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [multiplier, setMultiplier] = useState(1);
@@ -65,12 +67,14 @@ export default function RuntimeInputProcessor({
     Right: processors.find((processor) => processor.name === ROTATION_PROCESSOR_NAME.Right) ?? null,
   }), [processors]);
 
+  const sideLabel = (side: Side | 'Left' | 'Right') => isJapanese ? (side === 'Left' ? '左' : '右') : side;
+  const modeLabel = (scroll: boolean) => isJapanese ? (scroll ? 'スクロール' : 'カーソル') : (scroll ? 'Scroll' : 'Cursor');
+
   const displayName = (processor: RuntimeInputProcessorRecord) => {
     const meta = PROCESSOR_META[processor.name];
     if (!meta) return processor.name;
     const layerName = layerNames[meta.layerIndex] || `Layer ${meta.layerIndex}`;
-    const mode = processor.xyToScrollEnabled ? 'Scroll' : 'Cursor';
-    return `${meta.side} · ${layerName} · ${mode}`;
+    return `${sideLabel(meta.side)} · ${layerName} · ${modeLabel(processor.xyToScrollEnabled)}`;
   };
 
   async function callRuntimeInput(payload: Uint8Array, label: string) {
@@ -89,11 +93,11 @@ export default function RuntimeInputProcessor({
     setError(null);
     setProcessors([]);
     setSelectedId(null);
-    setMessage('Reading runtime pointing processors…');
+    setMessage(isJapanese ? 'トラックボール設定を読み込み中…' : 'Reading runtime pointing processors…');
     try {
       await callRuntimeInput(encodeListInputProcessorsRequest(), 'list_input_processors');
       await new Promise((resolve) => setTimeout(resolve, 700));
-      setMessage('Runtime pointing processors refreshed.');
+      setMessage(isJapanese ? 'トラックボール設定を更新しました。' : 'Runtime pointing processors refreshed.');
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : String(cause);
       setError(text);
@@ -164,7 +168,7 @@ export default function RuntimeInputProcessor({
   async function applyScale() {
     if (!selected) return;
     if (!Number.isInteger(multiplier) || multiplier < 1 || !Number.isInteger(divisor) || divisor < 1) {
-      setError('Multiplier and divisor must both be integers of 1 or greater.');
+      setError(isJapanese ? 'Multiplier と Divisor は1以上の整数にしてください。' : 'Multiplier and divisor must both be integers of 1 or greater.');
       return;
     }
 
@@ -186,7 +190,9 @@ export default function RuntimeInputProcessor({
       setProcessors((previous) => previous.map((item) => item.id === selected.id
         ? { ...item, scaleMultiplier: multiplier, scaleDivisor: divisor }
         : item));
-      setMessage(`${displayName(selected)}: saved ${multiplier}/${divisor}.`);
+      setMessage(isJapanese
+        ? `${displayName(selected)}: ${multiplier}/${divisor} を保存しました。`
+        : `${displayName(selected)}: saved ${multiplier}/${divisor}.`);
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : String(cause);
       setError(text);
@@ -213,7 +219,9 @@ export default function RuntimeInputProcessor({
       setProcessors((previous) => previous.map((item) => item.id === processor.id
         ? { ...item, rotationDegrees: value }
         : item));
-      setMessage(`${side} trackball orientation saved: ${value}° relative to the current hardware alignment.`);
+      setMessage(isJapanese
+        ? `${sideLabel(side)}トラックボールの向きを ${value}° に保存しました。`
+        : `${side} trackball orientation saved: ${value}° relative to the current hardware alignment.`);
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : String(cause);
       setError(text);
@@ -227,12 +235,14 @@ export default function RuntimeInputProcessor({
     <div className="custom-settings-view">
       <section className="panel custom-settings-toolbar">
         <div>
-          <h3>Trackball Runtime Settings</h3>
-          <p>Adjust speed, orientation and scroll inertia without rebuilding firmware.</p>
+          <h3>{isJapanese ? 'トラックボール設定' : 'Trackball Runtime Settings'}</h3>
+          <p>{isJapanese
+            ? 'ファームウェアを書き直さずに、速度・向き・スクロール慣性を調整できます。'
+            : 'Adjust speed, orientation and scroll inertia without rebuilding firmware.'}</p>
         </div>
         <div className="custom-settings-actions">
           <button className="button secondary" onClick={() => void loadProcessors()} disabled={busy || loading}>
-            {loading ? 'Reading…' : 'Refresh'}
+            {loading ? (isJapanese ? '読込中…' : 'Reading…') : (isJapanese ? '更新' : 'Refresh')}
           </button>
         </div>
       </section>
@@ -244,23 +254,25 @@ export default function RuntimeInputProcessor({
         <section className="panel trackball-orientation-panel">
           <div className="trackball-orientation-heading">
             <div>
-              <h3>Trackball Orientation</h3>
-              <p>Rotate each physical trackball by any angle. 0° keeps the currently tested direction.</p>
+              <h3>{isJapanese ? 'トラックボールの向き' : 'Trackball Orientation'}</h3>
+              <p>{isJapanese
+                ? '左右の物理トラックボールを任意角度で回転補正します。0°は現在確認済みの向きを維持します。'
+                : 'Rotate each physical trackball by any angle. 0° keeps the currently tested direction.'}</p>
             </div>
           </div>
           <div className="trackball-orientation-grid">
             {(['Left', 'Right'] as Side[]).map((side) => {
               const processor = rotationProcessors[side];
               if (!processor) {
-                return <div className="trackball-orientation-card missing" key={side}><strong>{side}</strong><small>Rotation processor unavailable</small></div>;
+                return <div className="trackball-orientation-card missing" key={side}><strong>{sideLabel(side)}</strong><small>{isJapanese ? '回転プロセッサを利用できません' : 'Rotation processor unavailable'}</small></div>;
               }
               const draft = rotationDraft[side];
               const changed = draft !== processor.rotationDegrees;
               return (
                 <div className="trackball-orientation-card" key={side}>
                   <div className="trackball-orientation-card-title">
-                    <div><span>{side}</span><strong>{draft}°</strong></div>
-                    <small>Current {processor.rotationDegrees}°</small>
+                    <div><span>{sideLabel(side)}</span><strong>{draft}°</strong></div>
+                    <small>{isJapanese ? '現在' : 'Current'} {processor.rotationDegrees}°</small>
                   </div>
                   <input
                     className="trackball-orientation-slider"
@@ -289,7 +301,7 @@ export default function RuntimeInputProcessor({
                         [side]: clampAngle(Number(event.target.value)),
                       }))}
                     />
-                    <span>degrees</span>
+                    <span>{isJapanese ? '度' : 'degrees'}</span>
                   </div>
                   <div className="trackball-orientation-presets">
                     {[-90, 0, 90, 180].map((angle) => (
@@ -306,14 +318,14 @@ export default function RuntimeInputProcessor({
                   </div>
                   <div className="trackball-actions">
                     <button className="button" disabled={busy || !changed} onClick={() => void applyRotation(side)}>
-                      {busy ? 'Saving…' : 'Apply & Save'}
+                      {busy ? (isJapanese ? '保存中…' : 'Saving…') : (isJapanese ? '適用して保存' : 'Apply & Save')}
                     </button>
                     <button
                       className="button secondary"
                       disabled={busy || !changed}
                       onClick={() => setRotationDraft((current) => ({ ...current, [side]: processor.rotationDegrees }))}
                     >
-                      Undo
+                      {isJapanese ? '元に戻す' : 'Undo'}
                     </button>
                   </div>
                 </div>
@@ -324,7 +336,7 @@ export default function RuntimeInputProcessor({
       )}
 
       {processors.length === 0 && !loading ? (
-        <div className="panel empty"><div><h3>No runtime processors found</h3><p>The firmware must advertise the cormoran_rip subsystem and define runtime input processors.</p></div></div>
+        <div className="panel empty"><div><h3>{isJapanese ? 'Runtime processorが見つかりません' : 'No runtime processors found'}</h3><p>{isJapanese ? 'ファームウェア側で cormoran_rip subsystem と runtime input processor が必要です。' : 'The firmware must advertise the cormoran_rip subsystem and define runtime input processors.'}</p></div></div>
       ) : (
         <div className="trackball-layout">
           <section className="trackball-mode-grid">
@@ -339,14 +351,13 @@ export default function RuntimeInputProcessor({
                 if (!processor) {
                   return (
                     <div className="trackball-mode-card missing" key={`${layerIndex}-${side}`}>
-                      <span className="trackball-card-topline"><span className="trackball-side">{side}</span></span>
+                      <span className="trackball-card-topline"><span className="trackball-side">{sideLabel(side)}</span></span>
                       <strong>{layerName}</strong>
-                      <small>No runtime processor</small>
+                      <small>{isJapanese ? 'Runtime processorなし' : 'No runtime processor'}</small>
                     </div>
                   );
                 }
 
-                const mode = processor.xyToScrollEnabled ? 'Scroll' : 'Cursor';
                 const currentSpeed = processor.scaleMultiplier / Math.max(1, processor.scaleDivisor);
                 return (
                   <button
@@ -355,8 +366,8 @@ export default function RuntimeInputProcessor({
                     onClick={() => setSelectedId(processor.id)}
                   >
                     <span className="trackball-card-topline">
-                      <span className="trackball-side">{side}</span>
-                      <span className={`trackball-mode-badge ${processor.xyToScrollEnabled ? 'scroll' : 'cursor'}`}>{mode}</span>
+                      <span className="trackball-side">{sideLabel(side)}</span>
+                      <span className={`trackball-mode-badge ${processor.xyToScrollEnabled ? 'scroll' : 'cursor'}`}>{modeLabel(processor.xyToScrollEnabled)}</span>
                     </span>
                     <strong>{layerName}</strong>
                     <span className="trackball-card-speed">{currentSpeed.toFixed(2)}×</span>
@@ -372,9 +383,9 @@ export default function RuntimeInputProcessor({
               <>
                 <div className="trackball-editor-heading">
                   <div>
-                    <div className="eyebrow">{PROCESSOR_META[selected.name]?.side ?? 'Trackball'} · {selected.xyToScrollEnabled ? 'Scroll' : 'Cursor'}</div>
+                    <div className="eyebrow">{PROCESSOR_META[selected.name] ? sideLabel(PROCESSOR_META[selected.name].side) : (isJapanese ? 'トラックボール' : 'Trackball')} · {modeLabel(selected.xyToScrollEnabled)}</div>
                     <h3>{PROCESSOR_META[selected.name] ? (layerNames[PROCESSOR_META[selected.name].layerIndex] || `Layer ${PROCESSOR_META[selected.name].layerIndex}`) : selected.name}</h3>
-                    <p>Move the slider to change this mode's speed.</p>
+                    <p>{isJapanese ? 'スライダーでこのモードの速度を変更します。' : "Move the slider to change this mode's speed."}</p>
                   </div>
                   <div className="trackball-speed-readout">{speed.toFixed(2)}×</div>
                 </div>
@@ -396,8 +407,8 @@ export default function RuntimeInputProcessor({
                     onChange={(event) => setSliderSpeed(Number(event.target.value))}
                   />
                   <div className="trackball-speed-summary">
-                    <span>Current <strong>{(selected.scaleMultiplier / Math.max(1, selected.scaleDivisor)).toFixed(2)}×</strong></span>
-                    <span>New <strong>{speed.toFixed(2)}×</strong></span>
+                    <span>{isJapanese ? '現在' : 'Current'} <strong>{(selected.scaleMultiplier / Math.max(1, selected.scaleDivisor)).toFixed(2)}×</strong></span>
+                    <span>{isJapanese ? '変更後' : 'New'} <strong>{speed.toFixed(2)}×</strong></span>
                   </div>
                 </div>
 
@@ -407,7 +418,7 @@ export default function RuntimeInputProcessor({
                     disabled={busy || (multiplier === selected.scaleMultiplier && divisor === selected.scaleDivisor)}
                     onClick={() => void applyScale()}
                   >
-                    {busy ? 'Saving…' : 'Apply & Save'}
+                    {busy ? (isJapanese ? '保存中…' : 'Saving…') : (isJapanese ? '適用して保存' : 'Apply & Save')}
                   </button>
                   <button
                     className="button secondary"
@@ -418,12 +429,14 @@ export default function RuntimeInputProcessor({
                       setSpeed(selected.scaleMultiplier / Math.max(1, selected.scaleDivisor));
                     }}
                   >
-                    Reset
+                    {isJapanese ? '元に戻す' : 'Reset'}
                   </button>
                 </div>
 
                 <button className="trackball-advanced-toggle" type="button" onClick={() => setAdvancedOpen((value) => !value)}>
-                  {advancedOpen ? 'Hide advanced settings' : 'Advanced settings'}
+                  {advancedOpen
+                    ? (isJapanese ? '詳細設定を閉じる' : 'Hide advanced settings')
+                    : (isJapanese ? '詳細設定' : 'Advanced settings')}
                 </button>
 
                 {advancedOpen && (
@@ -459,14 +472,14 @@ export default function RuntimeInputProcessor({
                       </label>
                     </div>
                     <div className="trackball-transform">
-                      <strong>Mode transform</strong>
+                      <strong>{isJapanese ? 'モード変換' : 'Mode transform'}</strong>
                       <span>{selected.rotationDegrees}° · swap {selected.xySwapEnabled ? 'on' : 'off'} · X invert {selected.xInvert ? 'on' : 'off'} · Y invert {selected.yInvert ? 'on' : 'off'}</span>
                     </div>
                   </div>
                 )}
               </>
             ) : (
-              <div className="empty">Select a trackball mode.</div>
+              <div className="empty">{isJapanese ? 'トラックボールモードを選択してください。' : 'Select a trackball mode.'}</div>
             )}
           </section>
         </div>
