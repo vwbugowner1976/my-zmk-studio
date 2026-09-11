@@ -2,6 +2,9 @@
   display: grid;
   gap: 16px;
   padding: 18px;
+  /* Encoder / Sensor Bindings is secondary to the keymap editor.
+     Keep it at the bottom of Layer Viewer regardless of portal insertion order. */
+  order: 999;
 }
 
 .sensor-bindings-heading {
