@@ -4,22 +4,71 @@ import KeyTester from './KeyTester';
 import { useLanguage } from './i18n';
 import './keyTesterPortal.css';
 
+const TOOL_EVENT = 'mykeebstudio-active-tool';
+
+function nativeToolTitle() {
+  const active = document.querySelector<HTMLElement>('.tool-nav .nav-item.active');
+  const text = (active?.textContent ?? '').trim();
+  if (/Layer Viewer|Keymap|レイヤービューア|キーマップ/i.test(text)) return 'Keymap';
+  return text || 'Runtime Combo';
+}
+
 export default function KeyTesterPortal() {
   const { isJapanese, t } = useLanguage();
   const [open, setOpen] = useState(false);
   const [menuHost, setMenuHost] = useState<HTMLElement | null>(null);
+  const [contentHost, setContentHost] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
-    const findMenu = () => {
+    const workspace = document.querySelector<HTMLElement>('.workspace');
+    if (!workspace) return undefined;
+
+    const syncHosts = () => {
       setMenuHost(document.querySelector<HTMLElement>('.tool-nav'));
+      setContentHost(document.querySelector<HTMLElement>('.content'));
     };
 
-    findMenu();
-    const observer = new MutationObserver(findMenu);
-    observer.observe(document.body, { childList: true, subtree: true });
-
+    syncHosts();
+    const observer = new MutationObserver(syncHosts);
+    observer.observe(workspace, { childList: true, subtree: true });
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (!contentHost) return;
+    contentHost.classList.toggle('external-tool-active', open);
+    return () => contentHost.classList.remove('external-tool-active');
+  }, [contentHost, open]);
+
+  useEffect(() => {
+    const onToolEvent = (event: Event) => {
+      const detail = (event as CustomEvent<{ id?: string }>).detail;
+      if (detail?.id && detail.id !== 'key-tester') setOpen(false);
+    };
+    const onDocumentClick = (event: MouseEvent) => {
+      const button = (event.target as HTMLElement | null)?.closest('.tool-nav .nav-item');
+      if (!button || button.classList.contains('key-tester-menu-item')) return;
+      setOpen(false);
+    };
+    window.addEventListener(TOOL_EVENT, onToolEvent);
+    document.addEventListener('click', onDocumentClick, true);
+    return () => {
+      window.removeEventListener(TOOL_EVENT, onToolEvent);
+      document.removeEventListener('click', onDocumentClick, true);
+    };
+  }, []);
+
+  function toggle() {
+    setOpen((current) => {
+      const next = !current;
+      window.dispatchEvent(new CustomEvent(TOOL_EVENT, {
+        detail: next
+          ? { id: 'key-tester', title: t('keyTester') }
+          : { id: 'native', title: nativeToolTitle() },
+      }));
+      return next;
+    });
+  }
 
   return (
     <>
@@ -27,10 +76,8 @@ export default function KeyTesterPortal() {
         <button
           type="button"
           className={`nav-item key-tester-menu-item ${open ? 'active' : ''}`}
-          onClick={() => setOpen((value) => !value)}
-          title={open
-            ? (isJapanese ? 'キーテスターを閉じる' : 'Close Key Tester')
-            : (isJapanese ? 'キーテスターを開く' : 'Open Key Tester')}
+          onClick={toggle}
+          title={isJapanese ? 'キーテスター' : 'Key Tester'}
         >
           <span aria-hidden="true">⌨</span>
           <span>{t('keyTester')}</span>
@@ -38,22 +85,11 @@ export default function KeyTesterPortal() {
         menuHost,
       )}
 
-      {open && (
-        <div className="key-tester-overlay" role="dialog" aria-modal="true" aria-label={t('keyTester')}>
-          <div className="key-tester-window">
-            <div className="key-tester-window-head">
-              <div>
-                <div className="eyebrow">{isJapanese ? 'キーボード診断' : 'Keyboard diagnostics'}</div>
-                <h2>{t('keyTester')}</h2>
-                <p>{isJapanese
-                  ? '実際のHID入力と、ZMK Studioから取得した実機レイアウトを確認します。'
-                  : "Test actual HID input, or use the keyboard's real physical layout from ZMK Studio."}</p>
-              </div>
-              <button className="button secondary" type="button" onClick={() => setOpen(false)}>{isJapanese ? '閉じる' : 'Close'}</button>
-            </div>
-            <KeyTester />
-          </div>
-        </div>
+      {open && contentHost && createPortal(
+        <div className="embedded-tool-page key-tester-main-page">
+          <KeyTester />
+        </div>,
+        contentHost,
       )}
     </>
   );
