@@ -136,7 +136,7 @@ export default function BLEManagement({ connection, subsystemIndex, onDebug }: P
               </div>
 
               <div className="ble-profile-status">
-                <span className={`ble-badge ${profile.bonded ? 'bonded' : 'empty'}`}>
+                <span className={`ble-badge ${profile.bonded ? 'bonded' : 'empty-slot'}`}>
                   {profile.bonded ? (isJapanese ? '登録済み' : 'Bonded') : (isJapanese ? '空き' : 'Empty')}
                 </span>
                 {!profile.bonded && profile.open && <span className="ble-pairing-hint">{isJapanese ? 'ペアリング可' : 'Pairable'}</span>}
