@@ -18,6 +18,7 @@ import './keymapDiffGuide.css';
 import './debugConsoleOverride.css';
 import './deviceName.css';
 import './language.css';
+import './uiPolish.css';
 
 installDeviceExportNaming();
 
