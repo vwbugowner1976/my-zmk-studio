@@ -19,21 +19,24 @@
   right: 18px;
   bottom: 18px;
   z-index: 120;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
   width: min(700px, 44vw);
   max-height: calc(100vh - 110px);
-  overflow: auto;
+  min-height: 0;
+  overflow: hidden;
   padding: 16px;
   border-color: #3b82f6;
   border-radius: 14px;
   background: #0b1220;
   box-shadow: 0 24px 70px rgba(0, 0, 0, .52);
-  scrollbar-gutter: stable;
 }
 
 .layer-viewer > .key-picker-panel .key-picker-heading {
-  position: sticky;
-  top: -16px;
+  position: relative;
   z-index: 4;
+  flex: 0 0 auto;
   margin: -16px -16px 0;
   padding: 16px;
   border-bottom: 1px solid #263244;
@@ -51,17 +54,41 @@
 }
 
 .layer-viewer > .key-picker-panel .binding-category-tabs {
-  position: sticky;
-  top: 92px;
+  position: relative;
   z-index: 3;
+  flex: 0 0 auto;
   margin: 0 -2px;
-  padding: 8px 2px;
+  padding: 10px 2px 9px;
+  border-bottom: 1px solid #1e293b;
   background: #0b1220;
 }
 
 .layer-viewer > .key-picker-panel .binding-category-tabs button {
   padding: 8px 10px;
   font-size: 11px;
+}
+
+.layer-viewer > .key-picker-panel .binding-behavior-section,
+.layer-viewer > .key-picker-panel .binding-quick-section,
+.layer-viewer > .key-picker-panel .standard-keyboard-picker,
+.layer-viewer > .key-picker-panel .binding-parameter-editor,
+.layer-viewer > .key-picker-panel > .notice {
+  flex: 0 1 auto;
+}
+
+/* Long behavior lists scroll inside the content area instead of moving the
+ * picker header/category tabs over each other. */
+.layer-viewer > .key-picker-panel .binding-behavior-section {
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.layer-viewer > .key-picker-panel .standard-keyboard-picker {
+  overflow: auto;
+  min-height: 0;
 }
 
 .layer-viewer > .key-picker-panel .standard-keyboard-picker {
