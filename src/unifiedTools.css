@@ -83,7 +83,10 @@
   margin-right: 4px;
 }
 
-.layer-viewer.keymap-backup-active > :not(.keymap-workspace-portal) {
+/* In backup mode, keep the real Keymap toolbar visible so the same
+   Backup / Back to Edit control never unmounts or disappears. Only the
+   editor body swaps out for the embedded backup workspace. */
+.layer-viewer.keymap-backup-active > :not(.layer-toolbar):not(.keymap-workspace-portal) {
   display: none !important;
 }
 
