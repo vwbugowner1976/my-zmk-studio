@@ -1,0 +1,54 @@
+.topbar-brand > div > h1:not(.header-identity-title) {
+  display: none;
+}
+
+.header-identity-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.header-identity-title {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.header-device-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: min(34vw, 420px);
+  padding: 5px 9px;
+  border: 1px solid #334155;
+  border-radius: 999px;
+  color: #cbd5e1;
+  background: #0f172a;
+  font-size: 12px;
+}
+
+.header-device-name .status {
+  flex: 0 0 auto;
+}
+
+.header-device-name strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .header-identity-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .header-device-name {
+    max-width: 55vw;
+  }
+}
