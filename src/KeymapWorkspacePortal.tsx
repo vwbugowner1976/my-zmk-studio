@@ -61,43 +61,19 @@ export default function KeymapWorkspacePortal() {
       }
 
       setHost((current) => current === next ? current : next);
+      const nextToolbar = next?.querySelector<HTMLElement>('.layer-export-actions') ?? null;
+      setToolbarHost((current) => current === nextToolbar ? current : nextToolbar);
     };
 
     sync();
     const observer = new MutationObserver(sync);
-    observer.observe(content, { childList: true });
+    observer.observe(content, { childList: true, subtree: true });
     document.addEventListener('click', sync, true);
     return () => {
       observer.disconnect();
       document.removeEventListener('click', sync, true);
     };
   }, [host]);
-
-  useEffect(() => {
-    if (!host) {
-      setToolbarHost(null);
-      return undefined;
-    }
-
-    const refreshToolbarHost = () => {
-      const next = host.querySelector<HTMLElement>('.layer-export-actions');
-      setToolbarHost((current) => current === next ? current : next);
-    };
-
-    if (!backupOpen) {
-      refreshToolbarHost();
-      const frame = window.requestAnimationFrame(refreshToolbarHost);
-      const observer = new MutationObserver(refreshToolbarHost);
-      observer.observe(host, { childList: true, subtree: true });
-      return () => {
-        window.cancelAnimationFrame(frame);
-        observer.disconnect();
-      };
-    }
-
-    setToolbarHost(null);
-    return undefined;
-  }, [host, backupOpen]);
 
   useEffect(() => {
     if (!host) return;
@@ -140,7 +116,10 @@ export default function KeymapWorkspacePortal() {
     menuHost,
   ) : null;
 
-  const toolbarAction = toolbarHost && !backupOpen ? createPortal(
+  // Keep this portal mounted even while Backup is open. The editor toolbar is only
+  // hidden by CSS in backup mode, so the same button is immediately visible again
+  // when returning to Edit without needing to rediscover/remount the toolbar host.
+  const toolbarAction = toolbarHost ? createPortal(
     <button
       type="button"
       className="button secondary keymap-toolbar-backup-button"
