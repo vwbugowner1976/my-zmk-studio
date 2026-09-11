@@ -69,10 +69,11 @@
 }
 .ble-badge.active { color: #bfdbfe; background: #1e3a8a; }
 .ble-badge.bonded { color: #bbf7d0; background: #14532d; }
-.ble-badge.empty { color: #cbd5e1; background: #334155; }
+.ble-badge.empty-slot { color: #cbd5e1; background: #334155; }
 .ble-badge.connected { color: #bbf7d0; background: #166534; }
 .ble-badge.disconnected { color: #cbd5e1; background: #374151; }
 .ble-pairing-hint { color: #64748b; font-size: 10px; white-space: nowrap; }
+.ble-empty-connection { color: #64748b; font-size: 12px; }
 
 .button.small,
 .ble-profile-actions .button {
