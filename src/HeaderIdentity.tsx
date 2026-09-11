@@ -12,7 +12,12 @@ function normalizeToolTitle(value: string) {
   const text = value.trim();
   if (/Layer Viewer|Keymap|レイヤービューア|キーマップ/i.test(text)) return 'Keymap';
   if (/Keymap Backup/i.test(text)) return 'Keymap';
-  return text || 'Runtime Combo';
+  if (/Key Tester|キーテスター/i.test(text)) return 'Key Tester';
+  if (/BLE Management|BLE管理/i.test(text)) return 'BLE Management';
+  if (/Trackball|トラックボール/i.test(text)) return 'Trackball';
+  if (/Custom Settings|カスタム設定/i.test(text)) return 'Custom Settings';
+  if (/Runtime Combo|ランタイムコンボ/i.test(text)) return 'Runtime Combo';
+  return text.replace(/^[^A-Za-z0-9\u3040-\u30ff\u3400-\u9fff]+/, '') || 'Runtime Combo';
 }
 
 function currentNativeToolTitle() {
