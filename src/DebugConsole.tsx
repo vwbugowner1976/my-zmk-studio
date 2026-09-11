@@ -3,7 +3,7 @@ import { useLanguage } from './i18n';
 
 const STORAGE_KEY = 'my-zmk-studio-debug-log';
 const POSITION_KEY = 'my-zmk-studio-debug-position';
-const PREFIX = '[MyZMKStudio] ';
+const PREFIX = '[MyKeebStudio] ';
 const MAX_LINES = 400;
 
 type Position = { x: number; y: number };
