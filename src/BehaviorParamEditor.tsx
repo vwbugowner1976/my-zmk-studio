@@ -4,6 +4,11 @@ import type { BehaviorOption } from './useStudioCore';
 type ParamNumber = 1 | 2;
 type HidChoice = { label: string; page: number; usage: number };
 
+const LETTER_USAGE: Record<string, number> = Object.fromEntries(
+  Array.from({ length: 26 }, (_, index) => [String.fromCharCode(65 + index), 4 + index]),
+);
+const letter = (label: string): HidChoice => ({ label, page: 0x07, usage: LETTER_USAGE[label] });
+
 const HID_KEY_ROWS: HidChoice[][] = [
   [
     { label: 'Esc', page: 0x07, usage: 41 },
@@ -19,21 +24,21 @@ const HID_KEY_ROWS: HidChoice[][] = [
   ],
   [
     { label: 'Tab', page: 0x07, usage: 43 },
-    ...'QWERTYUIOP'.split('').map((label, index) => ({ label, page: 0x07, usage: 20 + index })),
+    ...'QWERTYUIOP'.split('').map(letter),
     { label: '[', page: 0x07, usage: 47 },
     { label: ']', page: 0x07, usage: 48 },
     { label: '\\', page: 0x07, usage: 49 },
   ],
   [
     { label: 'Caps', page: 0x07, usage: 57 },
-    ...'ASDFGHJKL'.split('').map((label, index) => ({ label, page: 0x07, usage: 4 + index })),
+    ...'ASDFGHJKL'.split('').map(letter),
     { label: ';', page: 0x07, usage: 51 },
     { label: "'", page: 0x07, usage: 52 },
     { label: 'Enter', page: 0x07, usage: 40 },
   ],
   [
     { label: 'LShift', page: 0x07, usage: 225 },
-    ...'ZXCVBNM'.split('').map((label, index) => ({ label, page: 0x07, usage: 29 - index })),
+    ...'ZXCVBNM'.split('').map(letter),
     { label: ',', page: 0x07, usage: 54 },
     { label: '.', page: 0x07, usage: 55 },
     { label: '/', page: 0x07, usage: 56 },
