@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 export type Language = 'en' | 'ja';
 
@@ -100,10 +101,19 @@ export function useLanguage() {
 
 export function LanguageSwitcher() {
   const { language, setLanguage } = useLanguage();
-  return (
+  const [host, setHost] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setHost(document.querySelector<HTMLElement>('.topbar'));
+  }, []);
+
+  if (!host) return null;
+
+  return createPortal(
     <div className="language-switcher" role="group" aria-label="Language">
       <button type="button" className={language === 'ja' ? 'selected' : ''} onClick={() => setLanguage('ja')}>日本語</button>
       <button type="button" className={language === 'en' ? 'selected' : ''} onClick={() => setLanguage('en')}>English</button>
-    </div>
+    </div>,
+    host,
   );
 }
