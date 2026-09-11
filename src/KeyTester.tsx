@@ -26,7 +26,9 @@ type PhysicalKey = {
   label: string;
 };
 
-const KEY_ROWS = [
+type LayoutMode = 'physical' | 'jis' | 'us';
+
+const US_ROWS = [
   ['Escape', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'],
   ['Backquote', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal', 'Backspace'],
   ['Tab', 'KeyQ', 'KeyW', 'KeyE', 'KeyR', 'KeyT', 'KeyY', 'KeyU', 'KeyI', 'KeyO', 'KeyP', 'BracketLeft', 'BracketRight', 'Backslash'],
@@ -36,12 +38,23 @@ const KEY_ROWS = [
   ['Insert', 'Home', 'PageUp', 'Delete', 'End', 'PageDown', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight'],
 ];
 
+const JIS_ROWS = [
+  ['Escape', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'],
+  ['Backquote', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal', 'IntlYen', 'Backspace'],
+  ['Tab', 'KeyQ', 'KeyW', 'KeyE', 'KeyR', 'KeyT', 'KeyY', 'KeyU', 'KeyI', 'KeyO', 'KeyP', 'BracketLeft', 'BracketRight'],
+  ['CapsLock', 'KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK', 'KeyL', 'Semicolon', 'Quote', 'Backslash', 'Enter'],
+  ['ShiftLeft', 'KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM', 'Comma', 'Period', 'Slash', 'IntlRo', 'ShiftRight'],
+  ['ControlLeft', 'MetaLeft', 'AltLeft', 'NonConvert', 'Space', 'Convert', 'KanaMode', 'AltRight', 'MetaRight', 'ControlRight'],
+  ['Insert', 'Home', 'PageUp', 'Delete', 'End', 'PageDown', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight'],
+];
+
 const HID_TO_CODE: Record<number, string> = {
   40: 'Enter', 41: 'Escape', 42: 'Backspace', 43: 'Tab', 44: 'Space',
   45: 'Minus', 46: 'Equal', 47: 'BracketLeft', 48: 'BracketRight', 49: 'Backslash',
   51: 'Semicolon', 52: 'Quote', 53: 'Backquote', 54: 'Comma', 55: 'Period', 56: 'Slash',
   57: 'CapsLock', 73: 'Insert', 74: 'Home', 75: 'PageUp', 76: 'Delete', 77: 'End', 78: 'PageDown',
   79: 'ArrowRight', 80: 'ArrowLeft', 81: 'ArrowDown', 82: 'ArrowUp',
+  137: 'IntlYen', 138: 'IntlRo', 139: 'KanaMode', 140: 'Convert', 141: 'NonConvert',
   224: 'ControlLeft', 225: 'ShiftLeft', 226: 'AltLeft', 227: 'MetaLeft',
   228: 'ControlRight', 229: 'ShiftRight', 230: 'AltRight', 231: 'MetaRight',
 };
@@ -59,6 +72,7 @@ const keyLabel = (code: string) => {
     AltLeft: 'L Alt', AltRight: 'R Alt', MetaLeft: 'L Meta', MetaRight: 'R Meta',
     CapsLock: 'Caps', Backspace: 'Backspace', ContextMenu: 'Menu', Space: 'Space',
     PageUp: 'PgUp', PageDown: 'PgDn', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→',
+    IntlYen: '¥ / |', IntlRo: 'ろ', NonConvert: '無変換', Convert: '変換', KanaMode: 'かな',
   };
   if (aliases[code]) return aliases[code];
   if (code.startsWith('Key')) return code.slice(3);
@@ -90,12 +104,19 @@ export default function KeyTester() {
   const [seen, setSeen] = useState<Set<string>>(() => new Set());
   const [history, setHistory] = useState<KeyEntry[]>([]);
   const [eventId, setEventId] = useState(0);
-  const [usePhysicalLayout, setUsePhysicalLayout] = useState(true);
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>(() => {
+    const saved = localStorage.getItem('mykeebstudio-key-tester-layout');
+    return saved === 'jis' || saved === 'us' || saved === 'physical' ? saved : 'physical';
+  });
   const studioSnapshot = useSyncExternalStore(
     subscribeKeyTesterStudioSnapshot,
     getKeyTesterStudioSnapshot,
     getKeyTesterStudioSnapshot,
   );
+
+  useEffect(() => {
+    localStorage.setItem('mykeebstudio-key-tester-layout', layoutMode);
+  }, [layoutMode]);
 
   useEffect(() => {
     const record = (event: KeyboardEvent, type: 'down' | 'up') => {
@@ -163,7 +184,8 @@ export default function KeyTester() {
   }, [studioSnapshot]);
 
   const geometry = physicalKeys.length ? physicalGeometry(physicalKeys) : null;
-  const showPhysical = usePhysicalLayout && !!studioSnapshot && !!geometry;
+  const showPhysical = layoutMode === 'physical' && !!studioSnapshot && !!geometry;
+  const standardRows = layoutMode === 'jis' ? JIS_ROWS : US_ROWS;
 
   const reset = () => {
     setPressed(new Set());
@@ -189,29 +211,28 @@ export default function KeyTester() {
 
       <section className="panel tester-layout-loader">
         <div>
-          <h3>{studioSnapshot ? studioSnapshot.deviceName : 'Keyboard physical layout'}</h3>
+          <h3>Layout</h3>
           <p>
-            {studioSnapshot
-              ? `Loaded ${studioSnapshot.physicalKeys.length} physical keys from the current My Keeb Studio connection. No second serial connection is opened.`
-              : 'Connect the keyboard with My Keeb Studio to load its physical layout automatically.'}
+            {layoutMode === 'physical'
+              ? studioSnapshot
+                ? `${studioSnapshot.deviceName} · ${studioSnapshot.physicalKeys.length} physical keys from the current Studio connection.`
+                : 'Connect a ZMK Studio keyboard to use its real physical layout.'
+              : layoutMode === 'jis'
+                ? 'Japanese JIS-style reference layout for checking Japanese keyboard-specific keys.'
+                : 'US ANSI-style reference layout.'}
           </p>
         </div>
-        <div className="tester-layout-actions">
-          <button
-            className="button secondary"
-            type="button"
-            disabled={!studioSnapshot}
-            onClick={() => setUsePhysicalLayout((value) => !value)}
-          >
-            {showPhysical ? 'Use Standard Layout' : 'Use Keyboard Layout'}
-          </button>
+        <div className="tester-layout-actions tester-layout-tabs">
+          <button className={`button secondary ${layoutMode === 'physical' ? 'active' : ''}`} type="button" onClick={() => setLayoutMode('physical')} disabled={!studioSnapshot}>実機</button>
+          <button className={`button secondary ${layoutMode === 'jis' ? 'active' : ''}`} type="button" onClick={() => setLayoutMode('jis')}>JIS</button>
+          <button className={`button secondary ${layoutMode === 'us' ? 'active' : ''}`} type="button" onClick={() => setLayoutMode('us')}>US</button>
         </div>
       </section>
 
       <section className="panel tester-board-panel">
         <div className="panel-heading">
           <div>
-            <h3>{showPhysical ? 'Physical keyboard checker' : 'Keyboard checker'}</h3>
+            <h3>{showPhysical ? 'Physical keyboard checker' : layoutMode === 'jis' ? 'JIS keyboard checker' : 'US keyboard checker'}</h3>
             <p>
               {showPhysical
                 ? 'The shape comes from ZMK Studio. Base-layer HID outputs are matched to browser key events where possible.'
@@ -259,8 +280,8 @@ export default function KeyTester() {
             </p>
           </div>
         ) : (
-          <div className="tester-board" aria-label="Keyboard tester">
-            {KEY_ROWS.map((row, rowIndex) => (
+          <div className="tester-board" aria-label={`${layoutMode === 'jis' ? 'JIS' : 'US'} keyboard tester`}>
+            {standardRows.map((row, rowIndex) => (
               <div className="tester-row" key={rowIndex}>
                 {row.map((code) => (
                   <div
