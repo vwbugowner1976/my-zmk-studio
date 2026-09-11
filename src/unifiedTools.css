@@ -1,0 +1,94 @@
+.content.external-tool-active > *:not(.embedded-tool-page) {
+  display: none !important;
+}
+
+.embedded-tool-page {
+  width: 100%;
+  min-width: 0;
+}
+
+.key-tester-main-page,
+.ble-management-main-page {
+  display: grid;
+  gap: 14px;
+}
+
+/* Rename the existing Layer Viewer menu entry without touching App routing yet. */
+.tool-nav > .nav-item:nth-child(2) {
+  font-size: 0;
+}
+.tool-nav > .nav-item:nth-child(2)::after {
+  content: 'Keymap';
+  font-size: 14px;
+}
+
+/* Keymap Backup is now available from inside Keymap. */
+.tool-nav > .nav-item:nth-child(3) {
+  display: none !important;
+}
+
+.keymap-workspace-portal {
+  order: -100;
+  display: grid;
+  gap: 14px;
+}
+
+.keymap-workspace-tabs {
+  display: inline-flex;
+  justify-self: start;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: #0f172a;
+}
+
+.keymap-workspace-tabs button {
+  border: 0;
+  border-radius: 7px;
+  padding: 8px 12px;
+  color: #94a3b8;
+  background: transparent;
+  font-weight: 800;
+}
+
+.keymap-workspace-tabs button.active {
+  color: #fff;
+  background: #2563eb;
+}
+
+.layer-viewer.keymap-backup-active > :not(.keymap-workspace-portal) {
+  display: none !important;
+}
+
+.keymap-backup-embedded {
+  min-width: 0;
+}
+
+/* The current tool now lives in the title bar, so reclaim vertical space. */
+body.mykeeb-connected .content-header > div:first-child {
+  display: none;
+}
+body.mykeeb-connected .content-header {
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+body.mykeeb-connected .content-header:not(:has(.content-header-actions)) {
+  display: none;
+}
+
+.header-tool-title {
+  min-width: 0;
+  overflow: hidden;
+  color: #cbd5e1;
+  font-size: 16px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .header-tool-title {
+    font-size: 14px;
+  }
+}
