@@ -1,8 +1,8 @@
 .key-tester { display: grid; gap: 16px; }
 .key-tester > .tester-summary { order: 0; }
 .key-tester > .tester-layout-loader { order: 1; }
-.key-tester > .tester-input-monitor { order: 2; }
-.key-tester > .tester-board-panel { order: 3; }
+.key-tester > .tester-board-panel { order: 2; }
+.key-tester > .tester-input-monitor { order: 3; }
 .key-tester > .tester-log-panel { order: 4; }
 
 .tester-summary {
