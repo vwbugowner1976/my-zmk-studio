@@ -112,6 +112,65 @@
   gap: 10px;
 }
 
+/* Layer Viewer key editing stays beside the keymap instead of appearing below it. */
+.layer-viewer > .key-picker-panel {
+  position: fixed;
+  top: 92px;
+  right: 18px;
+  bottom: 18px;
+  z-index: 850;
+  width: min(680px, calc(100vw - 310px));
+  max-width: calc(100vw - 36px);
+  overflow: auto;
+  padding: 16px;
+  border-color: #3b82f6;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .48);
+}
+
+.behavior-param-input select {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid #334155;
+  border-radius: 9px;
+  color: #f8fafc;
+  background: #0f172a;
+}
+.behavior-hid-picker { display: grid; gap: 9px; }
+.behavior-hid-picker-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.behavior-hid-picker-head span { color: #64748b; font-size: 10px; }
+.behavior-hid-keyboard { overflow-x: auto; padding: 8px; border: 1px solid #263244; border-radius: 10px; background: #050a12; }
+.behavior-hid-row { display: flex; gap: 4px; min-width: max-content; margin-bottom: 4px; }
+.behavior-hid-row:last-child { margin-bottom: 0; }
+.behavior-hid-row button,
+.behavior-hid-media button {
+  min-width: 34px;
+  min-height: 30px;
+  padding: 4px 7px;
+  border: 1px solid #334155;
+  border-radius: 7px;
+  color: #cbd5e1;
+  background: #111827;
+  font-size: 10px;
+  font-weight: 700;
+}
+.behavior-hid-row button:hover,
+.behavior-hid-media button:hover { border-color: #60a5fa; }
+.behavior-hid-row button.active,
+.behavior-hid-media button.active { border-color: #60a5fa; color: #fff; background: #2563eb; }
+.behavior-hid-media { display: flex; flex-wrap: wrap; gap: 5px; }
+.behavior-param-advanced { color: #94a3b8; font-size: 11px; }
+.behavior-param-advanced summary { cursor: pointer; }
+.behavior-param-advanced .behavior-param-input { margin-top: 8px; }
+
+@media (max-width: 980px) {
+  .layer-viewer > .key-picker-panel {
+    left: 14px;
+    right: 14px;
+    width: auto;
+    max-width: none;
+  }
+}
+
 @media (max-width: 760px) {
   .binding-param-grid { grid-template-columns: 1fr; }
   .binding-behavior-grid { grid-template-columns: 1fr 1fr; }
