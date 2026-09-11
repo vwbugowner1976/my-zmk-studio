@@ -2,12 +2,29 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  order: 20;
 }
 
 .key-tester-menu-item > span:first-child {
   width: 1.1em;
   text-align: center;
 }
+
+/* Keep the Tools menu focused on the normal workflow. Key Tester is injected
+   through a portal, so CSS ordering lets it sit naturally beside the built-in tools
+   without touching the stable serial/App routing code. */
+.tool-nav {
+  display: flex;
+  flex-direction: column;
+}
+.tool-nav > .nav-item:nth-child(1) { order: 40; } /* Runtime Combo */
+.tool-nav > .nav-item:nth-child(2) { order: 10; } /* Layer Viewer */
+.tool-nav > .nav-item:nth-child(3) { order: 60; } /* Keymap Backup */
+.tool-nav > .nav-item:nth-child(4) { order: 50; } /* Custom Settings */
+.tool-nav > .nav-item:nth-child(5) { order: 30; } /* Trackball */
+.tool-nav > .nav-item:nth-child(6) { order: 100; margin-top: 14px; padding-top: 14px; border-top: 1px solid #263244; } /* BLE */
+.tool-nav > .nav-item:nth-child(7) { order: 110; } /* PMW3610 */
+.tool-nav > .nav-item:nth-child(8) { order: 120; } /* PAW3222 */
 
 .key-tester-overlay {
   position: fixed;
