@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import DebugConsole from './DebugConsole';
 import KeyTesterPortal from './KeyTesterPortal';
+import BLEManagementPortal from './BLEManagementPortal';
 import SensorBindingsPortal from './SensorBindingsPanel';
 import { installDeviceExportNaming } from './deviceIdentity';
 import { LanguageProvider, LanguageSwitcher } from './i18n';
@@ -28,6 +29,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <SensorBindingsPortal />
       <DebugConsole />
       <KeyTesterPortal />
+      <BLEManagementPortal />
     </LanguageProvider>
   </React.StrictMode>,
 );
