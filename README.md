@@ -1,10 +1,10 @@
-# My ZMK Studio
+# MyKeebStudio
 
 A lightweight local web UI for inspecting, testing, and exporting data from ZMK Studio enabled firmware.
 
-My ZMK Studio is intentionally useful as a developer/diagnostic companion to DYA Studio rather than a replacement for it.
+MyKeebStudio is intentionally useful as a developer/diagnostic companion to DYA Studio rather than a replacement for it.
 
-## v0.4
+## v0.6
 
 ### Runtime Combo
 
@@ -16,26 +16,26 @@ My ZMK Studio is intentionally useful as a developer/diagnostic companion to DYA
 - Save and re-read state from firmware
 - Compatibility fallback for older/broken `list_combos` implementations
 
-### Layer Viewer
-
-The keymap viewer is read-only.
+### Keymap
 
 - Reads the active physical layout from firmware
 - Reads all layers with standard `keymap.getKeymap`
-- Switch between layers without editing them
+- Switch between layers and edit bindings
 - Displays behavior names when available
-- Shows raw behavior parameters below the behavior label
-- Supports rotated physical-layout keys
+- Supports GUI selection for key behaviors and layer parameters when metadata is available
 - Export the current layer as PNG
 - Export every layer as individual PNG files
 - Export all layers as one PDF, one layer per page
+- Backup / Restore is integrated into the Keymap workspace
 
-### Developer tools
+### Tools
 
+- Key Tester in the main content area
+- BLE Management in the main content area when compatible firmware exposes `mykeeb__ble_management`
+- Trackball runtime settings
+- Custom Settings
 - Persistent Debug Console
 - RPC timing/payload logs
-- Logs survive disconnect and page reload
-- Copy / Clear / Hide controls
 - Clean Web Serial teardown so another Studio can connect immediately after disconnect
 
 ## Development
@@ -67,20 +67,14 @@ ZMK firmware
   |
   | ZMK Studio RPC / DYA-compatible Custom RPC
   v
-My ZMK Studio
+MyKeebStudio
+  |- Keymap editor + Backup / Restore
+  |- Key Tester
+  |- Trackball settings
   |- Runtime Combo inspector/editor
-  |- Layer Viewer
-  |- PNG/PDF exporter
+  |- BLE Management
+  |- Custom Settings
   `- Debug Console
 ```
 
-The Layer Viewer does not call keymap mutation RPCs. Runtime Combo saves always re-read the firmware state after saving instead of assuming local state matches persistent storage.
-
-## Future ideas
-
-- Rich keycode names instead of raw numeric parameters
-- Custom Settings inspector
-- BLE Management diagnostics
-- PMW3610 diagnostics/settings
-- PAW3222 diagnostics/settings
-- Generic Custom Subsystem inspector
+Legacy `my-zmk-studio-*` localStorage keys are intentionally retained for compatibility so existing user settings are not reset by the branding change.
