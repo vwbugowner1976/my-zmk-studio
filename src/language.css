@@ -1,15 +1,12 @@
 .language-switcher {
-  position: fixed;
-  top: 14px;
-  right: 158px;
-  z-index: 40;
   display: inline-flex;
   gap: 2px;
+  margin-left: auto;
+  margin-right: 12px;
   padding: 3px;
   border: 1px solid rgba(148, 163, 184, 0.24);
   border-radius: 10px;
-  background: rgba(15, 23, 42, 0.9);
-  backdrop-filter: blur(10px);
+  background: rgba(15, 23, 42, 0.72);
 }
 
 .language-switcher button {
@@ -32,7 +29,11 @@
 
 @media (max-width: 760px) {
   .language-switcher {
-    top: 62px;
-    right: 12px;
+    margin-right: 8px;
+  }
+
+  .language-switcher button {
+    padding: 5px 7px;
+    font-size: 11px;
   }
 }
