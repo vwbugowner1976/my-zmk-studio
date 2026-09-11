@@ -20,6 +20,7 @@ function isKeymapActive() {
 export default function KeymapWorkspacePortal() {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [menuHost, setMenuHost] = useState<HTMLElement | null>(null);
+  const [toolbarHost, setToolbarHost] = useState<HTMLElement | null>(null);
   const [backupOpen, setBackupOpen] = useState(false);
   const requestedModeRef = useRef<KeymapMode | null>(null);
   const { connection } = useSyncExternalStore(
@@ -73,6 +74,32 @@ export default function KeymapWorkspacePortal() {
   }, [host]);
 
   useEffect(() => {
+    if (!host) {
+      setToolbarHost(null);
+      return undefined;
+    }
+
+    const refreshToolbarHost = () => {
+      const next = host.querySelector<HTMLElement>('.layer-export-actions');
+      setToolbarHost((current) => current === next ? current : next);
+    };
+
+    if (!backupOpen) {
+      refreshToolbarHost();
+      const frame = window.requestAnimationFrame(refreshToolbarHost);
+      const observer = new MutationObserver(refreshToolbarHost);
+      observer.observe(host, { childList: true, subtree: true });
+      return () => {
+        window.cancelAnimationFrame(frame);
+        observer.disconnect();
+      };
+    }
+
+    setToolbarHost(null);
+    return undefined;
+  }, [host, backupOpen]);
+
+  useEffect(() => {
     if (!host) return;
     host.classList.toggle('keymap-backup-active', backupOpen);
     return () => host.classList.remove('keymap-backup-active');
@@ -91,8 +118,6 @@ export default function KeymapWorkspacePortal() {
     setBackupOpen(mode === 'backup');
     requestedModeRef.current = null;
   }
-
-  const toolbarHost = host?.querySelector<HTMLElement>('.layer-export-actions') ?? null;
 
   const sidebar = menuHost ? createPortal(
     <div className="keymap-nav-submenu" aria-label="Keymap tools">
