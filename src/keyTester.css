@@ -26,6 +26,11 @@
 .tester-layout-loader h3 { margin: 0 0 4px; }
 .tester-layout-loader p { margin: 0; color: var(--muted, #7d8792); }
 .tester-layout-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.tester-layout-tabs .button { min-width: 72px; }
+.tester-layout-tabs .button.active {
+  background: #2563eb;
+  box-shadow: 0 0 0 1px #60a5fa inset;
+}
 
 .tester-board-panel { overflow-x: auto; }
 .tester-board { min-width: 980px; display: grid; gap: 7px; padding-top: 8px; }
@@ -66,6 +71,8 @@
 .tester-key[title='CapsLock'], .tester-key[title='Enter'] { min-width: 88px; }
 .tester-key[title='ShiftLeft'], .tester-key[title='ShiftRight'] { min-width: 108px; }
 .tester-key[title='ControlLeft'], .tester-key[title='ControlRight'], .tester-key[title='MetaLeft'], .tester-key[title='MetaRight'], .tester-key[title='AltLeft'], .tester-key[title='AltRight'] { min-width: 76px; }
+.tester-key[title='NonConvert'], .tester-key[title='Convert'], .tester-key[title='KanaMode'] { min-width: 78px; }
+.tester-key[title='IntlYen'], .tester-key[title='IntlRo'] { min-width: 66px; }
 
 .tester-physical-scroll { overflow: auto; padding: 12px 2px 4px; }
 .tester-physical-board {
