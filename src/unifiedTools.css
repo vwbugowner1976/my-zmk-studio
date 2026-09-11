@@ -26,6 +26,41 @@
   display: none !important;
 }
 
+.keymap-nav-submenu {
+  order: 11;
+  display: grid;
+  gap: 3px;
+  margin: -2px 0 4px 14px;
+  padding-left: 10px;
+  border-left: 1px solid #334155;
+}
+
+.keymap-nav-submenu button {
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  color: #94a3b8;
+  background: transparent;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.keymap-nav-submenu button:hover:not(:disabled) {
+  color: #e2e8f0;
+  background: #172033;
+}
+
+.keymap-nav-submenu button.active {
+  color: #bfdbfe;
+  background: #172554;
+}
+
+.keymap-nav-submenu button:disabled {
+  opacity: .4;
+}
+
 .keymap-workspace-portal {
   order: -100;
   display: grid;
