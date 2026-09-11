@@ -1,115 +1,67 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import KeymapBackup from './KeymapBackup';
-import {
-  getSharedStudioConnectionSnapshot,
-  subscribeSharedStudioConnection,
-} from './studioConnectionRegistry';
 
-type KeymapMode = 'edit' | 'backup';
-
-function keymapMenuButton() {
+function keymapEditButton() {
   return document.querySelector<HTMLButtonElement>('.tool-nav > .nav-item:nth-child(2)');
 }
 
-function isKeymapActive() {
-  const button = keymapMenuButton();
-  return !!button?.classList.contains('active');
+function keymapBackupButton() {
+  return document.querySelector<HTMLButtonElement>('.tool-nav > .nav-item:nth-child(3)');
+}
+
+function isEditActive() {
+  return !!keymapEditButton()?.classList.contains('active');
+}
+
+function isBackupActive() {
+  return !!keymapBackupButton()?.classList.contains('active');
 }
 
 export default function KeymapWorkspacePortal() {
-  const [host, setHost] = useState<HTMLElement | null>(null);
   const [menuHost, setMenuHost] = useState<HTMLElement | null>(null);
   const [toolbarHost, setToolbarHost] = useState<HTMLElement | null>(null);
-  const [backupOpen, setBackupOpen] = useState(false);
-  const requestedModeRef = useRef<KeymapMode | null>(null);
-  const { connection } = useSyncExternalStore(
-    subscribeSharedStudioConnection,
-    getSharedStudioConnectionSnapshot,
-    getSharedStudioConnectionSnapshot,
-  );
+  const [, forceRender] = useState(0);
 
   useEffect(() => {
-    const findMenu = () => {
-      setMenuHost(document.querySelector<HTMLElement>('.tool-nav'));
-    };
-    findMenu();
-    const observer = new MutationObserver(findMenu);
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    const content = document.querySelector<HTMLElement>('.content');
-    if (!content) return undefined;
-
     const sync = () => {
-      const next = isKeymapActive()
-        ? content.querySelector<HTMLElement>('.layer-viewer')
+      setMenuHost(document.querySelector<HTMLElement>('.tool-nav'));
+      const toolbar = isEditActive()
+        ? document.querySelector<HTMLElement>('.layer-viewer .layer-export-actions')
         : null;
-
-      if (next) {
-        const requested = requestedModeRef.current;
-        if (requested) {
-          setBackupOpen(requested === 'backup');
-          requestedModeRef.current = null;
-        } else if (next !== host) {
-          setBackupOpen(false);
-        }
-      } else if (!requestedModeRef.current) {
-        setBackupOpen(false);
-      }
-
-      setHost((current) => current === next ? current : next);
-      const nextToolbar = next?.querySelector<HTMLElement>('.layer-export-actions') ?? null;
-      setToolbarHost((current) => current === nextToolbar ? current : nextToolbar);
+      setToolbarHost((current) => current === toolbar ? current : toolbar);
+      forceRender((value) => value + 1);
     };
 
     sync();
-    const observer = new MutationObserver(sync);
-    observer.observe(content, { childList: true, subtree: true });
+    const content = document.querySelector<HTMLElement>('.content');
+    const menu = document.querySelector<HTMLElement>('.tool-nav');
+    const contentObserver = content ? new MutationObserver(sync) : null;
+    const menuObserver = menu ? new MutationObserver(sync) : null;
+    contentObserver?.observe(content!, { childList: true, subtree: true });
+    menuObserver?.observe(menu!, { attributes: true, subtree: true, attributeFilter: ['class'] });
     document.addEventListener('click', sync, true);
+
     return () => {
-      observer.disconnect();
+      contentObserver?.disconnect();
+      menuObserver?.disconnect();
       document.removeEventListener('click', sync, true);
     };
-  }, [host]);
+  }, []);
 
-  useEffect(() => {
-    if (!host) return;
-    host.classList.toggle('keymap-backup-active', backupOpen);
-    return () => host.classList.remove('keymap-backup-active');
-  }, [host, backupOpen]);
+  function openEdit() {
+    keymapEditButton()?.click();
+  }
 
-  function openFromMenu(mode: KeymapMode) {
-    requestedModeRef.current = mode;
-    const button = keymapMenuButton();
-    if (!button) return;
-
-    if (!button.classList.contains('active')) {
-      button.click();
-      return;
-    }
-
-    setBackupOpen(mode === 'backup');
-    requestedModeRef.current = null;
+  function openBackup() {
+    keymapBackupButton()?.click();
   }
 
   const sidebar = menuHost ? createPortal(
     <div className="keymap-nav-submenu" aria-label="Keymap tools">
-      <button
-        type="button"
-        className={!backupOpen && isKeymapActive() ? 'active' : ''}
-        onClick={() => openFromMenu('edit')}
-      >
+      <button type="button" className={isEditActive() ? 'active' : ''} onClick={openEdit}>
         Edit
       </button>
-      <button
-        type="button"
-        className={backupOpen && isKeymapActive() ? 'active' : ''}
-        onClick={() => openFromMenu('backup')}
-        disabled={!connection}
-      >
+      <button type="button" className={isBackupActive() ? 'active' : ''} onClick={openBackup}>
         Backup / Restore
       </button>
     </div>,
@@ -120,30 +72,12 @@ export default function KeymapWorkspacePortal() {
     <button
       type="button"
       className="button secondary keymap-toolbar-backup-button"
-      onClick={() => setBackupOpen((value) => !value)}
-      disabled={!connection}
+      onClick={openBackup}
     >
-      {backupOpen ? '← Back to Edit' : 'Backup / Restore'}
+      Backup / Restore
     </button>,
     toolbarHost,
   ) : null;
 
-  const workspace = host && backupOpen ? createPortal(
-    <div className="keymap-workspace-portal">
-      {connection && (
-        <div className="keymap-backup-embedded">
-          <KeymapBackup
-            connection={connection}
-            onDebug={(event, detail) => {
-              const suffix = detail === undefined ? '' : ` ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`;
-              console.info(`[MyKeebStudio] ${new Date().toISOString().slice(11, 23)} ${event}${suffix}`);
-            }}
-          />
-        </div>
-      )}
-    </div>,
-    host,
-  ) : null;
-
-  return <>{sidebar}{toolbarAction}{workspace}</>;
+  return <>{sidebar}{toolbarAction}</>;
 }
