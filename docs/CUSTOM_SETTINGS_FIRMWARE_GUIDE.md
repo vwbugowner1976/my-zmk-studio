@@ -1,12 +1,12 @@
 # Custom Settings firmware integration guide
 
-This document describes how a ZMK firmware/module can expose settings to **My ZMK Studio → Custom Settings**.
+This document describes how a ZMK firmware/module can expose settings to **MyKeebStudio → Custom Settings**.
 
 It is based on the Custom Settings implementation currently used by the LoTom ZMK 0.3 firmware (`zmk-feature-custom-settings-v03`).
 
-## What My ZMK Studio expects
+## What MyKeebStudio expects
 
-My ZMK Studio does not need device-specific UI code for ordinary Custom Settings values. The firmware publishes:
+MyKeebStudio does not need device-specific UI code for ordinary Custom Settings values. The firmware publishes:
 
 - a custom subsystem identifier
 - a stable setting key
@@ -73,7 +73,7 @@ ZMK_RPC_CUSTOM_SUBSYSTEM(my_module, &my_module_meta, my_module_rpc_handle_reques
 
 Use the exact same identifier string/symbol namespace for the settings owned by that module.
 
-A module that already has its own Studio RPC subsystem can reuse that existing subsystem ID. Runtime Combo is an example: its settings use the Runtime Combo subsystem ID and therefore appear grouped under Runtime Combo in My ZMK Studio.
+A module that already has its own Studio RPC subsystem can reuse that existing subsystem ID. Runtime Combo is an example: its settings use the Runtime Combo subsystem ID and therefore appear grouped under Runtime Combo in MyKeebStudio.
 
 ## 3. Register a setting
 
@@ -143,7 +143,7 @@ ZMK_CUSTOM_SETTING_DEFINE(
     ZMK_CUSTOM_SETTING_RANGE_INT32(200, 3200));
 ```
 
-My ZMK Studio can use the range metadata automatically.
+MyKeebStudio can use the range metadata automatically.
 
 ### Option list
 
@@ -153,7 +153,7 @@ Use `ZMK_CUSTOM_SETTING_CONSTRAINT_OPTIONS` when the firmware has a finite set o
 
 Use `ZMK_CUSTOM_SETTING_ARRAY_ELEMENT_DEFINE(...)` for indexed settings. Runtime Combo uses this pattern for combo records/names.
 
-My ZMK Studio can list array elements, but complex array/bytes editing is better handled by a dedicated feature editor when the data has domain-specific structure.
+MyKeebStudio can list array elements, but complex array/bytes editing is better handled by a dedicated feature editor when the data has domain-specific structure.
 
 ## 5. Apply a changed setting to live hardware
 
@@ -274,7 +274,7 @@ sensor_attr_set(trackball, SENSOR_CHAN_ALL,
 
 The exact channel accepted by the pinned PMW3610 driver must be kept consistent with its `attr_set` implementation; verify against the pinned driver before merging firmware changes.
 
-## 9. Recommended My ZMK Studio integration rules
+## 9. Recommended MyKeebStudio integration rules
 
 For a good generic UI:
 
@@ -292,7 +292,7 @@ After adding a firmware setting:
 
 1. Build both split halves.
 2. Flash both halves if relay/config changed.
-3. Connect the central half to My ZMK Studio.
+3. Connect the central half to MyKeebStudio.
 4. Confirm the new subsystem appears in the Custom Subsystems list.
 5. Open Custom Settings.
 6. Confirm `list_settings` reports the new setting.
