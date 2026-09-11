@@ -28,6 +28,12 @@ export default function KeymapWorkspacePortal() {
       const next = isKeymapActive()
         ? content.querySelector<HTMLElement>('.layer-viewer')
         : null;
+
+      if (next && next !== host) {
+        next.classList.remove('keymap-backup-active');
+        setBackupOpen(false);
+      }
+
       setHost((current) => current === next ? current : next);
       if (!next) setBackupOpen(false);
     };
@@ -40,7 +46,7 @@ export default function KeymapWorkspacePortal() {
       observer.disconnect();
       document.removeEventListener('click', sync, true);
     };
-  }, []);
+  }, [host]);
 
   useEffect(() => {
     if (!host) return;
@@ -52,37 +58,40 @@ export default function KeymapWorkspacePortal() {
 
   return createPortal(
     <div className="keymap-workspace-portal">
-      <div className="keymap-workspace-tabs" role="tablist" aria-label="Keymap tools">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={!backupOpen}
-          className={!backupOpen ? 'active' : ''}
-          onClick={() => setBackupOpen(false)}
-        >
-          Editor
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={backupOpen}
-          className={backupOpen ? 'active' : ''}
-          onClick={() => setBackupOpen(true)}
-          disabled={!connection}
-        >
-          Backup / Restore
-        </button>
-      </div>
-      {backupOpen && connection && (
-        <div className="keymap-backup-embedded">
-          <KeymapBackup
-            connection={connection}
-            onDebug={(event, detail) => {
-              const suffix = detail === undefined ? '' : ` ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`;
-              console.info(`[MyKeebStudio] ${new Date().toISOString().slice(11, 23)} ${event}${suffix}`);
-            }}
-          />
+      {!backupOpen ? (
+        <div className="keymap-workspace-actions">
+          <button
+            type="button"
+            className="button secondary"
+            onClick={() => setBackupOpen(true)}
+            disabled={!connection}
+          >
+            Backup / Restore
+          </button>
         </div>
+      ) : (
+        <>
+          <div className="keymap-workspace-actions backup-open">
+            <button
+              type="button"
+              className="button secondary"
+              onClick={() => setBackupOpen(false)}
+            >
+              ← Back to Keymap
+            </button>
+          </div>
+          {connection && (
+            <div className="keymap-backup-embedded">
+              <KeymapBackup
+                connection={connection}
+                onDebug={(event, detail) => {
+                  const suffix = detail === undefined ? '' : ` ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`;
+                  console.info(`[MyKeebStudio] ${new Date().toISOString().slice(11, 23)} ${event}${suffix}`);
+                }}
+              />
+            </div>
+          )}
+        </>
       )}
     </div>,
     host,
