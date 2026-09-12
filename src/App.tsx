@@ -215,12 +215,16 @@ export default function App() {
   }
 
   async function loadStudioData(nextConnection: RpcConnection) {
-    const [subsystemResponse, keys, keymapResponse, deviceInfoResponse] = await Promise.all([
-      call_rpc(nextConnection, { custom: { listCustomSubsystems: {} } }),
-      readPhysicalLayout(nextConnection),
-      call_rpc(nextConnection, { keymap: { getKeymap: true } }),
-      call_rpc(nextConnection, { core: { getDeviceInfo: true } }),
-    ]);
+    // The Studio serial RPC transport must be bootstrapped one request at a time.
+    // Parallel call_rpc() traffic here can cross request IDs on stock ZMK Studio
+    // firmware, especially while child components are mounting.
+    const subsystemResponse = await call_rpc(nextConnection, { custom: { listCustomSubsystems: {} } });
+    const keys = await readPhysicalLayout(nextConnection);
+    debug('RPC -> keymap.getKeymap');
+    const keymapResponse = await call_rpc(nextConnection, { keymap: { getKeymap: true } });
+    debug('RPC -> core.getDeviceInfo');
+    const deviceInfoResponse = await call_rpc(nextConnection, { core: { getDeviceInfo: true } });
+
     const detected = (subsystemResponse.custom?.listCustomSubsystems?.subsystems ?? []).map((subsystem) => ({
       index: subsystem.index,
       identifier: subsystem.identifier,
@@ -335,14 +339,19 @@ export default function App() {
       debug('Studio lock state', lockState === 0 ? 'LOCKED' : 'UNLOCKED');
 
       setTransport(nextTransport);
-      setConnection(nextConnection);
 
       if (lockState === 0) {
+        // Locked devices need the connection published so the unlock poll can run.
+        // behaviorOptions remains disabled while studioLocked is true.
         setStudioLocked(true);
+        setConnection(nextConnection);
         setMessage('Studio unlock required. Press the Studio Unlock key on the keyboard.');
         debug('Waiting for Studio unlock...');
       } else {
+        // Finish bootstrap before publishing the connection to child components.
+        // This prevents Keymap/Behavior effects from racing the initial RPC sequence.
         await loadStudioData(nextConnection);
+        setConnection(nextConnection);
       }
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error);
