@@ -27,6 +27,13 @@ function emit() {
 export function setConnectedDevice(deviceId: string) {
   try {
     localStorage.setItem(CURRENT_DEVICE_KEY, deviceId);
+    // A VID:PID can be shared by multiple ZMK keyboards. Do not surface a
+    // previous device name while the new connection is still being identified.
+    const names = readNames();
+    if (names[deviceId]) {
+      delete names[deviceId];
+      writeNames(names);
+    }
   } catch {
     // Ignore storage failures.
   }
