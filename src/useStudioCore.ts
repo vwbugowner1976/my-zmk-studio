@@ -31,13 +31,15 @@ export function useBehaviorOptions(connection: RpcConnection | null | undefined)
         behaviors: { listAllBehaviors: true },
       });
       const ids = listResp?.behaviors?.listAllBehaviors?.behaviors ?? [];
-      const details = await Promise.all(
-        ids.map((id) =>
-          call_rpc(connection, {
+      const details = [];
+      for (const id of ids) {
+        if (cancelled) return;
+        details.push(
+          await call_rpc(connection, {
             behaviors: { getBehaviorDetails: { behaviorId: id } },
           }),
-        ),
-      );
+        );
+      }
       if (cancelled) return;
 
       setOptions(
