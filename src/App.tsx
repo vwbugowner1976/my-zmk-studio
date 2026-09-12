@@ -215,21 +215,26 @@ export default function App() {
   }
 
   async function loadStudioData(nextConnection: RpcConnection) {
-    // The Studio serial RPC transport must be bootstrapped one request at a time.
-    // Parallel call_rpc() traffic here can cross request IDs on stock ZMK Studio
-    // firmware, especially while child components are mounting.
-    const subsystemResponse = await call_rpc(nextConnection, { custom: { listCustomSubsystems: {} } });
+    // Stock ZMK Studio RPCs always come first. Custom RPC is an optional extension
+    // and must not prevent a normal Studio-only keyboard from connecting.
+    debug('RPC -> core.getDeviceInfo');
+    const deviceInfoResponse = await call_rpc(nextConnection, { core: { getDeviceInfo: true } });
     const keys = await readPhysicalLayout(nextConnection);
     debug('RPC -> keymap.getKeymap');
     const keymapResponse = await call_rpc(nextConnection, { keymap: { getKeymap: true } });
-    debug('RPC -> core.getDeviceInfo');
-    const deviceInfoResponse = await call_rpc(nextConnection, { core: { getDeviceInfo: true } });
 
-    const detected = (subsystemResponse.custom?.listCustomSubsystems?.subsystems ?? []).map((subsystem) => ({
-      index: subsystem.index,
-      identifier: subsystem.identifier,
-    }));
-    debug('Custom Subsystems', detected);
+    let detected: CustomSubsystem[] = [];
+    try {
+      debug('RPC -> custom.listCustomSubsystems');
+      const subsystemResponse = await call_rpc(nextConnection, { custom: { listCustomSubsystems: {} } });
+      detected = (subsystemResponse.custom?.listCustomSubsystems?.subsystems ?? []).map((subsystem) => ({
+        index: subsystem.index,
+        identifier: subsystem.identifier,
+      }));
+      debug('Custom Subsystems', detected);
+    } catch (error) {
+      debug('Custom RPC unavailable; continuing with stock ZMK Studio', error instanceof Error ? error.message : String(error));
+    }
 
     const runtimeComboDetected = detected.find((subsystem) => subsystem.identifier === RUNTIME_COMBO_SUBSYSTEM_ID);
     let loadedCombos: RuntimeComboRecord[] = [];
@@ -269,7 +274,9 @@ export default function App() {
     setStudioLocked(false);
     setMessage(runtimeComboDetected
       ? `Connected. Read ${loadedCombos.length} Runtime Combo(s).`
-      : `Connected. ${detected.length} Custom Subsystem(s) detected.`);
+      : detected.length
+        ? `Connected. ${detected.length} Custom Subsystem(s) detected.`
+        : 'Connected. Standard ZMK Studio firmware.');
   }
 
   async function readStudioLockState(nextConnection: RpcConnection) {
